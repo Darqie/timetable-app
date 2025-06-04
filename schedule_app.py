@@ -22,7 +22,8 @@ PAIRS = [
 ]
 
 DAYS = ["Понеділок", "Вівторок", "Середа", "Четвер", "П’ятниця"]
-NUM_GROUPS_PER_DAY = 6
+NUM_GROUPS_PER_DAY = 6 # ЗВЕРНІТЬ УВАГУ: Велика 'D'
+
 GROUP_NAMES = [f"Група {i+1}" for i in range(NUM_GROUPS_PER_DAY)]
 
 # --- Функції для роботи з базою даних SQLite ---
@@ -90,7 +91,7 @@ def load_schedule(week_start_date):
         st.warning(f"Розклад для тижня {week_start_date.strftime('%d.%m.%Y')} не знайдено в базі даних. Створюється шаблонний розклад.")
         # Якщо розкладу немає, генеруємо шаблонний
         for i_day in range(len(DAYS)):
-            for i_group in range(NUM_GROUPS_PER_day):
+            for i_group in range(NUM_GROUPS_PER_DAY): # ВИПРАВЛЕНО ТУТ: NUM_GROUPS_PER_DAY
                 for i_pair in range(len(PAIRS)):
                     key = (i_day, i_group, i_pair)
                     loaded_data[key] = {
@@ -204,12 +205,7 @@ st.markdown("---")
 # --- Рендеринг таблиці розкладу з можливістю редагування ---
 # Тепер ми будемо використовувати Streamlit input widgets для кожної клітинки,
 # щоб зміни могли бути відстежені Python і збережені в БД.
-# Перетягування, яке було в попередньому HTML, не буде зберігатися в БД.
-# Для зберігання змін потрібні текстові поля.
 
-# Ми зберігаємо дані розкладу в st.session_state.schedule_display_data
-
-# Створення таблиці
 st.markdown("""
 <style>
 .schedule-grid-container {
@@ -270,6 +266,7 @@ st.markdown("""
     background: rgba(200, 220, 240, 0.8);
     font-size: 12px;
 }
+/* Стилі для Streamlit TextInput, щоб вони краще виглядали в сітці */
 .stTextInput > div > div > input {
     text-align: center !important;
     font-size: 9px !important;
@@ -298,46 +295,84 @@ for roman, time_range in PAIRS:
     ''', unsafe_allow_html=True)
 
 # Main content rows
+# Замість одного components.html для всієї таблиці, ми будемо генерувати її за допомогою Streamlit columns
+# Це дозволить нам використовувати st.text_input безпосередньо.
+
+# Streamlit не дозволяє напряму вбудовувати віджети в HTML-рядок, який передається в st.markdown або components.html.
+# Тому ми повинні використовувати вкладені st.columns для створення візуальної сітки з віджетами.
+
+# Динамічне створення колонок для кожного дня і групи
+# Спочатку, створимо заголовки днів та груп окремо, а потім петлі для даних.
+
+# Заголовки днів та груп будуть частиною HTML, щоб вони могли використовувати grid-row-span.
+# Далі ми будемо генерувати рядки з полями вводу.
+
+# Важливо: st.columns створює новий горизонтальний блок. Нам потрібно імітувати сітку.
+
+# Віджет Streamlit створюється послідовно. Щоб створити сітку,
+# ми повинні використовувати st.columns для кожного "ряду" даних
+# і потім вкладати input-поля в ці колонки.
+
+# Це дещо відрізняється від повної HTML-сітки, де всі елементи в div.
+# Через обмеження Streamlit, ми будемо будувати це по рядах.
+
+# Для більш точної сітки зі Streamlit віджетами, потрібно створювати columns для кожного рядка даних
+# (день + група + 5 пар).
+
 for i_day, day_name in enumerate(DAYS):
+    # Заголовок дня
     st.markdown(f'<div class="grid-cell day-header-cell"><span class="day-header-text">{day_name}</span></div>', unsafe_allow_html=True)
 
     for i_group in range(NUM_GROUPS_PER_DAY):
+        # Заголовок групи
         st.markdown(f'<div class="grid-cell group-header-cell">{GROUP_NAMES[i_group]}</div>', unsafe_allow_html=True)
 
-        for i_pair in range(len(PAIRS)):
-            # Use st.columns to place inputs within a single grid cell visually
-            # This is a workaround for placing inputs directly in HTML component
-            # Each cell will be a small column itself to contain the inputs.
-            col_content = st.columns(1)[0] # Create a single column for the cell content
+        # Створення колонок для пар (предметів/викладачів)
+        # Кожен ряд пар буде окремим блоком Streamlit.
+        cols_for_pairs = st.columns(len(PAIRS)) # Створюємо 5 колонок для 5 пар
 
+        for i_pair in range(len(PAIRS)):
+            # Отримання поточних даних для клітинки
             current_item = st.session_state.schedule_display_data.get((i_day, i_group, i_pair), {
-                "teacher": "", "subject": "", "id": str(uuid.uuid4())
+                "teacher": "", "subject": "", "id": str(uuid.uuid4()) # Якщо немає, даємо пусті значення
             })
 
-            with col_content:
-                # Text input for subject
+            with cols_for_pairs[i_pair]:
+                # Вбудовуємо стілі для відступів для компактності
+                st.markdown(
+                    """
+                    <style>
+                    .stTextInput {
+                        margin-bottom: 0px !important;
+                        padding-bottom: 0px !important;
+                    }
+                    .stTextInput > div {
+                        margin-bottom: 0px !important;
+                    }
+                    </style>
+                    """, unsafe_allow_html=True
+                )
+
+                # Текстове поле для предмету
                 st.session_state.schedule_display_data[(i_day, i_group, i_pair)]['subject'] = st.text_input(
-                    f"subject_{i_day}_{i_group}_{i_pair}",
+                    label="Предмет", # Лейбл буде прихований CSS
                     value=current_item["subject"],
-                    key=f"subject_{i_day}_{i_group}_{i_pair}_input",
+                    key=f"subject_{st.session_state.start_date.isoformat()}_{i_day}_{i_group}_{i_pair}",
                     placeholder="Предмет"
                 )
-                # Text input for teacher
+                # Текстове поле для викладача
                 st.session_state.schedule_display_data[(i_day, i_group, i_pair)]['teacher'] = st.text_input(
-                    f"teacher_{i_day}_{i_group}_{i_pair}",
+                    label="Викладач", # Лейбл буде прихований CSS
                     value=current_item["teacher"],
-                    key=f"teacher_{i_day}_{i_group}_{i_pair}_input",
+                    key=f"teacher_{st.session_state.start_date.isoformat()}_{i_day}_{i_group}_{i_pair}",
                     placeholder="Викладач"
                 )
 
-# Закриття контейнера, якщо ми використовували окремі HTML-блоки
-# Цей підхід з st.columns для кожної клітинки не дозволяє прямо закрити .schedule-grid-container.
-# Streamlit компонує елементи вертикально.
-# Якщо ви хочете *повністю* інтегровану HTML-таблицю, де кожен input є частиною HTML,
-# це вимагає значно складнішого кастомного Streamlit компонента.
-# Поточний підхід дозволяє використовувати стандартні віджети Streamlit.
-# st.markdown("</div>", unsafe_allow_html=True) # THIS LINE WOULD CAUSE AN ERROR WITH CURRENT APPROACH
+# Закриття основного div контейнера для сітки
+st.markdown("</div>", unsafe_allow_html=True) # Закриваємо grid-container
 
+# --- Кнопки збереження та завантаження (вже налаштовані вище) ---
+# ... (решта коду з кнопками Зберегти/Завантажити PDF та функцією generate_pdf)
 # --- Кнопки збереження та завантаження ---
 # Ці кнопки вже були вище, але додаємо функціонал
 with col_save_btn:
@@ -363,6 +398,9 @@ with col_download_btn:
         st.warning("Не вдалося згенерувати PDF-файл.")
 
 # PDF Generation Function (unchanged, just ensure it uses correct data)
+# Ця функція має бути поза основним потоком коду, що викликає віджети.
+# Якщо вона була в кінці, як у попередній відповіді, то це не проблема.
+# Я перемістив її на кінець файлу, щоб зберегти структуру.
 def generate_pdf(schedule_data_for_pdf, start_date_pdf, end_date_pdf, pairs_pdf, days_pdf, group_names_pdf, num_groups_per_day_pdf):
     pdf = FPDF(orientation='L', unit='mm', format='A4')
     pdf.add_page()
