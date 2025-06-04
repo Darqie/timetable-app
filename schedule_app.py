@@ -152,13 +152,20 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days):
     pdf.add_page()
 
     # Шлях до файлу шрифту (відносно кореня вашого додатку)
-    font_path = "fonts/DejaVuSans.ttf" 
+    regular_font_path = "fonts/DejaVuSans.ttf"
+    bold_font_path = "fonts/DejaVuSans-Bold.ttf" # Припускаємо, що файл називається так
 
     try:
-        pdf.add_font("DejaVuSans", "", font_path, uni=True)
-        pdf.set_font("DejaVuSans", size=12)
+        # Додаємо регулярний шрифт
+        pdf.add_font("DejaVuSans", "", regular_font_path, uni=True)
+        
+        # Додаємо жирний шрифт
+        # Переконайтеся, що файл bold_font_path існує у вашій папці fonts!
+        pdf.add_font("DejaVuSans", "B", bold_font_path, uni=True) 
+        
+        pdf.set_font("DejaVuSans", "", size=12) # Встановлюємо поточний шрифт як регулярний за замовчуванням
     except Exception as e:
-        st.error(f"Помилка завантаження шрифту: {e}. Переконайтеся, що файл {font_path} існує і доступний.")
+        st.error(f"Помилка завантаження шрифту: {e}. Переконайтеся, що файли шрифтів (регулярний та жирний) існують у папці 'fonts' та правильно вказані шляхи.")
         return None 
 
     pdf.cell(200, 10, txt=f"Розклад: {start_date.strftime('%d.%m.%Y')} – {end_date.strftime('%d.%m.%Y')}", ln=True, align="C")
