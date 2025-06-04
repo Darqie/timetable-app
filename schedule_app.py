@@ -220,13 +220,16 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days):
     day_col_width = 35 # Ширина для колонки днів
     pair_col_width = (page_width - day_col_width) / len(pairs) # Ширина для кожної колонки пари
 
-    # Перший рядок заголовків (пуста комірка + пари)
+ # Перший рядок заголовків (пуста комірка + пари)
     pdf.set_font("DejaVuSans", "B", 10)
     pdf.cell(day_col_width, 10, txt="", border=1, align="C") # Верхній лівий кут
     for roman, time_range in pairs:
-        pdf.multi_cell(pair_col_width, 5, txt=f"{roman} ПАРА\n({time_range})", border=1, align="C", center=True)
+        # Видаляємо 'center=True'
+        pdf.multi_cell(pair_col_width, 5, txt=f"{roman} ПАРА\n({time_range})", border=1, align="C")
         # Переміщуємо курсор, щоб продовжити в тому ж рядку
-        pdf.set_xy(pdf.get_x() + pair_col_width, pdf.get_y() - 10) # Відкорегувати Y
+        # Можливо, потрібно буде налаштувати Y-координату, залежно від висоти комірки.
+        # pdf.get_y() - 5 - це спроба повернутися до початкового рівня рядка після multi_cell
+        pdf.set_xy(pdf.get_x() + pair_col_width, pdf.get_y() - 10) # <-- Цей рядок також може потребувати коригування Y
 
     pdf.ln(10) # Перейти на новий рядок після заголовків пар
 
