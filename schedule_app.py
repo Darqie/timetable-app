@@ -4,56 +4,74 @@ import uuid
 from datetime import date, timedelta
 from fpdf import FPDF
 import os
-import sqlite3
 import json
+import psycopg2 # Новий імпорт для PostgreSQL
+from psycopg2 import sql # Для безпечної роботи з SQL-запитами
 
 st.set_page_config(page_title="Розклад пар", layout="wide")
 
 # --- Налаштування бази даних ---
-DATABASE_NAME = "schedule.db"
+# Використовуємо st.connection для Streamlit Native Connections (рекомендовано)
+# Або st.secrets для ручного підключення, якщо st.connection не підтримується для ваших цілей
+# Приклад використання st.secrets:
+# DB_CONFIG = st.secrets["connections.postgresql"]
 
-def init_db():
+# Функція для отримання з'єднання з БД
+@st.cache_resource
+def get_db_connection():
+    """Створює та кешує з'єднання з базою даних PostgreSQL."""
+    try:
+        # Рекомендований спосіб підключення в Streamlit
+        conn = st.connection('postgresql', type='sql')
+        # Тестовий запит, щоб перевірити, чи з'єднання працює
+        # conn.query("SELECT 1")
+        # st.success("Успішно підключено до PostgreSQL через st.connection!")
+        return conn.session # Отримуємо сесію SQLAlchemy
+    except Exception as e:
+        st.error(f"Помилка підключення до бази даних: {e}")
+        st.info("Перевірте ваш файл .streamlit/secrets.toml або налаштування секретів у Streamlit Cloud.")
+        st.stop() # Зупиняємо виконання додатка, якщо немає з'єднання
+
+def init_db(conn):
     """Ініціалізує базу даних, створює таблицю, якщо її немає."""
-    with sqlite3.connect(DATABASE_NAME) as conn:
-        cursor = conn.cursor()
+    with conn.cursor() as cursor: # Використовуємо курсор з об'єкта сесії
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS schedule (
                 week_start_date TEXT PRIMARY KEY,
                 data TEXT
-            )
+            );
         ''')
         conn.commit()
 
-def save_schedule_to_db(week_start_date, schedule_data):
+def save_schedule_to_db(conn, week_start_date, schedule_data):
     """Зберігає дані розкладу для конкретного тижня в базу даних."""
     week_start_date_str = week_start_date.strftime('%Y-%m-%d')
-    # Перетворюємо schedule_data у формат, який можна зберегти в JSON
     serializable_schedule_data = {}
     for (day_idx, group_idx, pair_idx), item in schedule_data.items():
         key_str = f"{day_idx},{group_idx},{pair_idx}"
         serializable_schedule_data[key_str] = item
 
     data_json = json.dumps(serializable_schedule_data, ensure_ascii=False)
-    with sqlite3.connect(DATABASE_NAME) as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT OR REPLACE INTO schedule (week_start_date, data)
-            VALUES (?, ?)
-        ''', (week_start_date_str, data_json))
+    
+    with conn.cursor() as cursor:
+        cursor.execute(sql.SQL('''
+            INSERT INTO schedule (week_start_date, data)
+            VALUES (%s, %s)
+            ON CONFLICT (week_start_date) DO UPDATE
+            SET data = EXCLUDED.data;
+        '''), (week_start_date_str, data_json))
         conn.commit()
-    st.toast("Розклад збережено!") # Додано сповіщення про збереження
+    st.toast("Розклад збережено!")
 
-def load_schedule_from_db(week_start_date):
+def load_schedule_from_db(conn, week_start_date):
     """Завантажує дані розкладу для конкретного тижня з бази даних."""
     week_start_date_str = week_start_date.strftime('%Y-%m-%d')
-    with sqlite3.connect(DATABASE_NAME) as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT data FROM schedule WHERE week_start_date = ?', (week_start_date_str,))
+    with conn.cursor() as cursor:
+        cursor.execute(sql.SQL('SELECT data FROM schedule WHERE week_start_date = %s;'), (week_start_date_str,))
         result = cursor.fetchone()
         if result:
             loaded_data_json = result[0]
             deserialized_data = json.loads(loaded_data_json)
-            # Перетворюємо ключі назад у кортежі
             schedule_data = {}
             for key_str, item in deserialized_data.items():
                 day_idx, group_idx, pair_idx = map(int, key_str.split(','))
@@ -61,8 +79,9 @@ def load_schedule_from_db(week_start_date):
             return schedule_data
         return None
 
-# Ініціалізація бази даних при старті додатку
-init_db()
+# Отримання з'єднання з базою даних
+db_conn = get_db_connection()
+init_db(db_conn) # Ініціалізація бази даних при старті додатку
 
 # Розміщення назви "Розклад пар" по центру
 st.markdown("<h2 style='text-align: center; margin-bottom: 10px;'>Розклад пар</h2>", unsafe_allow_html=True)
@@ -75,8 +94,7 @@ col_label, col_date_input, col_spacer_date, col_save_btn, col_download_btn, _ = 
 
 if 'start_date' not in st.session_state:
     st.session_state.start_date = date(2025, 6, 2) # Або date.today(), якщо хочете поточну дату як стартову
-    # При першому запуску спробувати завантажити або ініціалізувати
-    initial_load = load_schedule_from_db(st.session_state.start_date)
+    initial_load = load_schedule_from_db(db_conn, st.session_state.start_date)
     if initial_load:
         st.session_state.schedule_data = initial_load
     else:
@@ -107,12 +125,10 @@ with col_date_input:
     selected_date = st.date_input("", st.session_state.start_date, key="manual_date_picker")
     if selected_date != st.session_state.start_date:
         st.session_state.start_date = selected_date
-        # При зміні дати завантажуємо розклад з бази даних або ініціалізуємо новий
-        loaded_data = load_schedule_from_db(st.session_state.start_date)
+        loaded_data = load_schedule_from_db(db_conn, st.session_state.start_date)
         if loaded_data:
             st.session_state.schedule_data = loaded_data
         else:
-            # Якщо даних для цього тижня немає, ініціалізуємо порожній розклад
             st.session_state.schedule_data = {}
         st.experimental_rerun()
 
@@ -129,7 +145,7 @@ def get_monday_of_week(target_date):
 with col_prev_week:
     if st.button("⏪ Минулий тиждень", key="prev_week_btn"):
         st.session_state.start_date = get_monday_of_week(st.session_state.start_date - timedelta(weeks=1))
-        loaded_data = load_schedule_from_db(st.session_state.start_date)
+        loaded_data = load_schedule_from_db(db_conn, st.session_state.start_date)
         if loaded_data:
             st.session_state.schedule_data = loaded_data
         else:
@@ -139,17 +155,17 @@ with col_prev_week:
 with col_current_week:
     if st.button("🗓️ Поточний тиждень", key="current_week_btn"):
         st.session_state.start_date = get_monday_of_week(date.today())
-        loaded_data = load_schedule_from_db(st.session_state.start_date)
+        loaded_data = load_schedule_from_db(db_conn, st.session_state.start_date)
         if loaded_data:
             st.session_state.schedule_data = loaded_data
         else:
-            st.session_state.schedule_date = {}
+            st.session_state.schedule_data = {}
         st.experimental_rerun()
 
 with col_next_week:
     if st.button("⏩ Майбутній тиждень", key="next_week_btn"):
         st.session_state.start_date = get_monday_of_week(st.session_state.start_date + timedelta(weeks=1))
-        loaded_data = load_schedule_from_db(st.session_state.start_date)
+        loaded_data = load_schedule_from_db(db_conn, st.session_state.start_date)
         if loaded_data:
             st.session_state.schedule_data = loaded_data
         else:
@@ -172,8 +188,7 @@ num_groups_per_day = 6
 group_names = [f"Група {i+1}" for i in range(num_groups_per_day)]
 
 # Ініціалізація або завантаження schedule_data
-if 'schedule_data' not in st.session_state or not st.session_state.schedule_data:
-    # Це початкові дані, якщо для поточного тижня в базі нічого немає
+if not st.session_state.schedule_data: # Перевіряємо, чи словник порожній
     initial_schedule_data = {}
     for i_day in range(len(days)):
         for i_group in range(num_groups_per_day):
@@ -185,9 +200,9 @@ if 'schedule_data' not in st.session_state or not st.session_state.schedule_data
                     "subject": f"Предм.{i_pair+1}-{i_group+1}",
                     "id": str(uuid.uuid4())
                 }
-    st.session_state.schedule_data = initial_schedule_data # Заповнюємо, якщо порожньо
+    st.session_state.schedule_data = initial_schedule_data
     # Автоматично зберігаємо щойно ініціалізований розклад
-    save_schedule_to_db(st.session_state.start_date, st.session_state.schedule_data)
+    save_schedule_to_db(db_conn, st.session_state.start_date, st.session_state.schedule_data)
 
 # Отримуємо поточні дані розкладу для відображення
 current_schedule_data = st.session_state.schedule_data
@@ -330,9 +345,13 @@ for i_day, day_name in enumerate(days):
                 "teacher": "Немає", "group": group_names[i_group], "subject": "Пусто", "id": str(uuid.uuid4())
             })
             # Передаємо додаткові data-атрибути для JS
+            # Важливо: якщо id не унікальний або не існує в item, згенеруйте новий тимчасовий uuid
+            # (Хоча ваш код генерує його на початку, перевірка не завадить)
+            item_id = item.get('id', str(uuid.uuid4()))
+            
             html_code += f'''
             <div class="cell" ondrop="drop(event, {i_day}, {i_group}, {i_pair})" ondragover="allowDrop(event)">
-                <div id="{item['id']}" class="draggable" draggable="true"
+                <div id="{item_id}" class="draggable" draggable="true"
                      data-day="{i_day}" data-group="{i_group}" data-pair="{i_pair}"
                      data-subject="{item['subject']}" data-teacher="{item['teacher']}"
                      ondragstart="drag(event)">
@@ -365,6 +384,8 @@ html_code += """
         ev.dataTransfer.setData("fromDay", ev.target.dataset.day);
         ev.dataTransfer.setData("fromGroup", ev.target.dataset.group);
         ev.dataTransfer.setData("fromPair", ev.target.dataset.pair);
+        ev.dataTransfer.setData("fromSubject", ev.target.dataset.subject);
+        ev.dataTransfer.setData("fromTeacher", ev.target.dataset.teacher);
     }
 
     function drop(ev, toDay, toGroup, toPair) {
@@ -372,9 +393,13 @@ html_code += """
         var draggedId = ev.dataTransfer.getData("text");
         var draggedElem = document.getElementById(draggedId);
 
+        // Дані вихідної позиції та вмісту
         var fromDay = parseInt(ev.dataTransfer.getData("fromDay"));
         var fromGroup = parseInt(ev.dataTransfer.getData("fromGroup"));
         var fromPair = parseInt(ev.dataTransfer.getData("fromPair"));
+        var fromSubject = ev.dataTransfer.getData("fromSubject");
+        var fromTeacher = ev.dataTransfer.getData("fromTeacher");
+
 
         var dropTarget = ev.target;
         while (!dropTarget.classList.contains("cell") || dropTarget.classList.contains("cell-header")) {
@@ -382,33 +407,41 @@ html_code += """
             if (!dropTarget) return; // Запобігти помилці, якщо dropTarget стане null
         }
 
-        var existing = dropTarget.querySelector(".draggable");
-        var parentOfDragged = draggedElem.parentNode;
+        var existing = dropTarget.querySelector(".draggable"); // Елемент, який був у цільовій комірці
 
-        // Визначаємо id та дані елемента, який залишиться у вихідній комірці (якщо є)
-        var existingId = existing ? existing.id : null;
-        var existingSubject = existing ? existing.dataset.subject : null;
-        var existingTeacher = existing ? existing.dataset.teacher : null;
-
-        // Оновлюємо візуальне відображення
+        // Зберігаємо поточні дані цільової комірки перед переміщенням
+        var existingData = null;
         if (existing) {
-            dropTarget.appendChild(draggedElem);
-            parentOfDragged.appendChild(existing);
-        } else {
-            dropTarget.appendChild(draggedElem);
+            existingData = {
+                id: existing.id,
+                subject: existing.dataset.subject,
+                teacher: existing.dataset.teacher,
+                day: parseInt(existing.dataset.day),
+                group: parseInt(existing.dataset.group),
+                pair: parseInt(existing.dataset.pair)
+            };
         }
 
+        // Візуальне оновлення:
+        // Переміщуємо перетягнутий елемент на нове місце
+        dropTarget.appendChild(draggedElem);
+        // Якщо в цільовій комірці вже був елемент, переміщуємо його на місце вихідної комірки
+        if (existing) {
+            var originalParentOfDragged = document.querySelector(`.cell[ondrop*="drop(event, ${fromDay}, ${fromGroup}, ${fromPair})"]`);
+            if (originalParentOfDragged) {
+                 originalParentOfDragged.appendChild(existing);
+                 // Оновлюємо data-атрибути для обміняного елемента
+                 existing.dataset.day = fromDay;
+                 existing.dataset.group = fromGroup;
+                 existing.dataset.pair = fromPair;
+            }
+        }
+        
         // Оновлюємо data-атрибути для перетягнутого елемента
         draggedElem.dataset.day = toDay;
         draggedElem.dataset.group = toGroup;
         draggedElem.dataset.pair = toPair;
-
-        // Якщо відбувся обмін, оновлюємо data-атрибути для обміняного елемента
-        if (existing) {
-            existing.dataset.day = fromDay;
-            existing.dataset.group = fromGroup;
-            existing.dataset.pair = fromPair;
-        }
+        // Subject і teacher залишаються тими ж, якщо це не редагування, а лише переміщення.
 
         // Збираємо дані для надсилання до Streamlit
         var updatedSchedule = {};
@@ -422,7 +455,7 @@ html_code += """
             updatedSchedule[`${day},${group},${pair}`] = {
                 subject: subject,
                 teacher: teacher,
-                group: el.parentNode.previousElementSibling.innerText, // Зберігаємо ім'я групи з HTML
+                group: el.parentNode.previousElementSibling ? el.parentNode.previousElementSibling.innerText : 'Unknown Group', // Або отримати з data-атрибута, якщо Group є в data-атрибуті
                 id: id
             };
         });
@@ -432,22 +465,21 @@ html_code += """
 """
 
 # Компонент для отримання даних від JavaScript
-# Цей компонент буде оновлювати st.session_state.schedule_data
-# коли користувач перетягує елементи
 component_value = components.html(html_code, height=800, scrolling=True, key="schedule_editor")
 
 # Якщо Streamlit отримав дані від JavaScript, оновлюємо st.session_state
+# st.write("DEBUG: component_value received:", component_value) # Для налагодження, можна увімкнути
 if component_value is not None:
-    # Перетворюємо ключі назад у кортежі
     new_schedule_data = {}
     for key_str, item in component_value.items():
         day_idx, group_idx, pair_idx = map(int, key_str.split(','))
         new_schedule_data[(day_idx, group_idx, pair_idx)] = item
     
     # Оновлюємо session_state тільки якщо дані дійсно змінилися
+    # Це важливо, щоб уникнути нескінченного ре-рану, якщо JS постійно надсилає ті самі дані
     if new_schedule_data != st.session_state.schedule_data:
         st.session_state.schedule_data = new_schedule_data
-        save_schedule_to_db(st.session_state.start_date, st.session_state.schedule_data)
+        save_schedule_to_db(db_conn, st.session_state.start_date, st.session_state.schedule_data)
         st.experimental_rerun() # Перезапустити для відображення оновлених даних з session_state
 
 def generate_pdf(schedule_data_pdf, start_date_pdf, end_date_pdf, pairs_pdf, days_pdf, group_names_pdf, num_groups_per_day_pdf):
@@ -558,7 +590,6 @@ def generate_pdf(schedule_data_pdf, start_date_pdf, end_date_pdf, pairs_pdf, day
 
             pdf.set_font("DejaVuSans", "", 7)
             for i_pair in range(len(pairs_pdf)):
-                # Отримуємо дані з переданого schedule_data_pdf
                 item = schedule_data_pdf.get((i_day, i_group, i_pair), {
                     "subject": "Пусто", "teacher": "Немає"
                 })
@@ -579,13 +610,10 @@ pdf_file_name = f"розклад_{st.session_state.start_date.strftime('%d.%m')}
 
 with col_save_btn:
     if st.button("💾 Зберегти", key="save_button"):
-        # Тепер ця кнопка просто збереже поточний стан st.session_state.schedule_data
-        # до бази даних, на випадок, якщо drag-and-drop не спрацював або для ручного збереження
-        save_schedule_to_db(st.session_state.start_date, st.session_state.schedule_data)
+        save_schedule_to_db(db_conn, st.session_state.start_date, st.session_state.schedule_data)
         st.success("Розклад збережено в базу даних!")
 
 with col_download_btn:
-    # Передаємо st.session_state.schedule_data до generate_pdf
     pdf_bytes = generate_pdf(st.session_state.schedule_data, st.session_state.start_date, end_date, pairs, days, group_names, num_groups_per_day)
 
     if pdf_bytes:
