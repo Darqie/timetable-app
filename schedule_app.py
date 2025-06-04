@@ -110,20 +110,27 @@ body {{ background-color: var(--main-bg-color); }}
     font-size: 16px;
     border-radius: 0;
 }}
-/* Зміни для заголовка дня: видаляємо border і додаємо стилі для повороту тексту */
+/* Оновлені стилі для заголовка дня */
 .day-header-main {{
     background: var(--header-bg-day);
     font-size: 16px;
     grid-row: span {num_groups_per_day};
     border-radius: 0;
+    position: relative; /* Для позиціонування внутрішнього span */
     display: flex;
-    align-items: center;
-    justify-content: center;
-    /* Поворот тексту */
+    align-items: center; /* Вирівнюємо по вертикалі */
+    justify-content: center; /* Вирівнюємо по горизонталі */
+    border: none; /* Забираємо всі рамки з контейнера */
+}}
+.day-header-text {{
     transform: rotate(-90deg);
-    white-space: nowrap; /* Запобігаємо переносу слова */
-    transform-origin: center center; /* Точка обертання */
-    border: none; /* Забираємо рамку */
+    white-space: nowrap;
+    transform-origin: center center;
+    /* Оновлено: якщо потрібно, для більш точного центрування */
+    /* top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-90deg); */
+    font-weight: bold;
 }}
 .group-sub-header {{
     background: var(--header-bg-group);
@@ -166,7 +173,8 @@ for roman, time_range in pairs:
     '''
 
 for i_day, day_name in enumerate(days):
-    html_code += f'<div class="cell cell-header day-header-main">{day_name}</div>'
+    # Обгортаємо текст дня в span для повороту
+    html_code += f'<div class="cell cell-header day-header-main"><span class="day-header-text">{day_name}</span></div>'
 
     for i_group in range(num_groups_per_day):
         html_code += f'<div class="cell group-sub-header">{group_names[i_group]}</div>'
@@ -256,12 +264,15 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
     # Малюємо верхні заголовки (порожня комірка, "Група", "Пари")
     pdf.set_font("DejaVuSans", "B", 10)
     
+    # Верхній лівий кут (порожній)
     pdf.set_xy(initial_x, initial_y)
     pdf.cell(day_col_width, header_height, txt="", border=1, align="C")
 
+    # Заголовок "Група"
     pdf.set_xy(initial_x + day_col_width, initial_y)
     pdf.cell(group_col_width, header_height, txt="Група", border=1, align="C")
 
+    # Заголовки пар
     current_x_for_pairs = initial_x + day_col_width + group_col_width
     for roman, time_range in pairs:
         pdf.set_xy(current_x_for_pairs, initial_y)
@@ -273,8 +284,10 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
     pdf.set_font("DejaVuSans", "", 7)
     
     for i_day, day_name in enumerate(days):
+        # Перевіряємо, чи вміститься блок дня на поточній сторінці
         if pdf.get_y() + (content_cell_height * num_groups_per_day) > (pdf.h - pdf.b_margin):
             pdf.add_page()
+            # Перемальовуємо верхні заголовки на новій сторінці
             pdf.set_font("DejaVuSans", "B", 10)
             pdf.set_xy(initial_x, pdf.t_margin)
             pdf.cell(day_col_width, header_height, txt="", border=1, align="C")
@@ -291,41 +304,38 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
 
         day_block_start_y = pdf.get_y()
 
+        # Позиція для центрування повернутого тексту дня
+        day_text_center_x = initial_x + day_col_width / 2
+        day_text_center_y = day_block_start_y + (content_cell_height * num_groups_per_day) / 2
+
+        # Малюємо вертикальний текст дня лише один раз для всього блоку дня
+        if i_day == 0 or (i_day > 0 and pdf.get_page_height() - day_block_start_y > content_cell_height * num_groups_per_day): # Продовжуємо, якщо є місце або це перший день
+             pdf.set_font("DejaVuSans", "B", 12)
+             pdf.rotate(90, day_text_center_x, day_text_center_y)
+             # Центруємо текст відносно його власної ширини
+             text_width = pdf.get_string_width(day_name)
+             # У rotated state, x-coord = y-coord from unrotated origin, y-coord = -x-coord from unrotated origin
+             # Отже, щоб центрувати, ми віднімаємо половину ширини тексту від day_text_center_x (яка є y-координатою для rotated тексту)
+             # І для y-координати (x-координата для rotated тексту), ми використовуємо day_text_center_y
+             pdf.set_xy(day_text_center_x - text_width / 2, day_text_center_y - pdf.font_size / 2)
+             pdf.cell(text_width, pdf.font_size, txt=day_name, align="C")
+             pdf.rotate(0) # Повертаємо назад
+             pdf.set_font("DejaVuSans", "", 7) # Повертаємо основний шрифт
+
         for i_group in range(num_groups_per_day):
             current_row_start_x = pdf.get_x()
             current_row_start_y = pdf.get_y()
 
-            # Заголовок дня з поворотом та прибиранням зайвих ліній
-            pdf.set_font("DejaVuSans", "B", 9)
-            
-            # Встановлюємо позицію для текстового блоку дня
-            day_text_x = initial_x + day_col_width / 2 # Центр колонки дня
-            day_text_y = current_row_start_y + (content_cell_height * num_groups_per_day) / 2 # Центр блоку дня
+            # Малюємо тільки праву вертикальну межу для стовпця дня
+            # та горизонтальні межі між групами
+            pdf.line(initial_x + day_col_width, current_row_start_y, initial_x + day_col_width, current_row_start_y + content_cell_height) # Права вертикальна лінія для стовпця дня
+            pdf.line(initial_x, current_row_start_y + content_cell_height, initial_x + day_col_width, current_row_start_y + content_cell_height) # Горизонтальна лінія знизу (якщо не остання група)
 
+            # Малюємо ліву вертикальну межу для стовпця дня
+            # Це потрібно, щоб стовпець дня мав ліву межу, яка не є частиною rotated text
             if i_group == 0:
-                # Малюємо комірку-контейнер для дня, яка охоплює всі групи, без рамки
-                # Це буде фонова область для повороту тексту
-                pdf.rect(initial_x, day_block_start_y, day_col_width, content_cell_height * num_groups_per_day)
-                
-                # Зберігаємо поточні налаштування для повороту
-                pdf.set_text_color(0, 0, 0) # Чорний текст
-                pdf.set_font("DejaVuSans", "B", 12) # Збільшуємо шрифт для повернутого тексту
+                pdf.line(initial_x, day_block_start_y, initial_x, day_block_start_y + content_cell_height * num_groups_per_day)
 
-                # Переміщуємося в центр блоку, обертаємо і виводимо текст
-                pdf.rotate(90, day_text_x, day_text_y)
-                pdf.set_xy(day_text_x - pdf.get_string_width(day_name) / 2, day_text_y - pdf.font_size / 2)
-                pdf.cell(pdf.get_string_width(day_name), pdf.font_size, txt=day_name, align="C")
-                pdf.rotate(0) # Повертаємо назад
-
-                # Повертаємо шрифт і колір
-                pdf.set_font("DejaVuSans", "", 7)
-                pdf.set_text_color(0, 0, 0)
-                
-            # Малюємо лінії між "Група" та "Пари" для цього дня
-            # Це фактично створює вертикальні лінії, які були б частиною об'єднаної комірки дня
-            # Малюємо ліву рамку для стовпця груп
-            pdf.rect(initial_x, current_row_start_y, day_col_width, content_cell_height) # Малюємо рамку для поточної клітинки "дня"
-            
             # Повертаємо курсор на початок стовпця "Група" для поточного рядка
             pdf.set_xy(initial_x + day_col_width, current_row_start_y)
 
