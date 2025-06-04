@@ -236,6 +236,13 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
     bold_font_path = "fonts/DejaVuSans-Bold.ttf"
 
     try:
+        # Перевіряємо наявність файлів шрифтів
+        import os
+        if not os.path.exists(regular_font_path):
+            raise FileNotFoundError(f"Шрифт не знайдено: {regular_font_path}")
+        if not os.path.exists(bold_font_path):
+            raise FileNotFoundError(f"Шрифт не знайдено: {bold_font_path}")
+
         pdf.add_font("DejaVuSans", "", regular_font_path, uni=True)
         pdf.add_font("DejaVuSans", "B", bold_font_path, uni=True)
         pdf.set_font("DejaVuSans", "", size=10)
@@ -256,33 +263,38 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
     pair_col_width = (page_width - day_col_width - group_col_width) / len(pairs) # Ширина для кожної колонки пари
 
     # Зберегти початкову X-позицію для рядка заголовків
-    initial_x = pdf.get_x()
+    initial_x = pdf.l_margin # Початок поля
     initial_y = pdf.get_y()
 
     # Заголовковий рядок (пуста комірка + "Група" + Заголовки пар)
     pdf.set_font("DejaVuSans", "B", 10)
-    pdf.cell(day_col_width, 10, txt="", border=1, align="C") # Верхній лівий кут (порожній)
-    pdf.cell(group_col_width, 10, txt="Група", border=1, align="C") # Заголовок "Група"
     
-    # Позиціонування для заголовків пар
-    # Ми хочемо, щоб ці клітинки були на тому ж рівні Y, що й "Група", і починалися після неї.
-    current_x = pdf.get_x()
-    current_y = pdf.get_y() # Поточна Y після клітинки "Група"
-    
-    # Висота для multi_cell заголовків пар
-    pair_header_h = 10 
+    # Верхній лівий кут (порожній)
+    pdf.set_xy(initial_x, initial_y)
+    pdf.cell(day_col_width, 15, txt="", border=1, align="C") # Збільшена висота заголовка для кращого вигляду
+
+    # Заголовок "Група"
+    pdf.set_xy(initial_x + day_col_width, initial_y)
+    pdf.cell(group_col_width, 15, txt="Група", border=1, align="C") # Збільшена висота
+
+    # Заголовки пар
+    current_x_for_pairs = initial_x + day_col_width + group_col_width
+    pair_header_h = 15 # Висота для multi_cell заголовків пар
 
     for roman, time_range in pairs:
-        pdf.set_xy(current_x, initial_y) # Повернутися на початковий Y для заголовків
+        pdf.set_xy(current_x_for_pairs, initial_y) # Встановлюємо X для поточної пари
+        # multi_cell для двох рядків тексту в заголовку пари
         pdf.multi_cell(pair_col_width, pair_header_h / 2, txt=f"{roman} ПАРА\n({time_range})", border=1, align="C")
-        current_x += pair_col_width # Перемістити X для наступної пари
-
+        current_x_for_pairs += pair_col_width # Перемістити X для наступної пари
+        
     # Після малювання всіх заголовків пар, переходимо на новий рядок
     pdf.set_xy(initial_x, initial_y + pair_header_h) # Перемістити на Y після заголовків
 
+
     # Основний контент таблиці
     pdf.set_font("DejaVuSans", "", 7) # Ще менший шрифт для вмісту клітинок
-    row_height_pdf = 15 # Фіксована висота рядка для PDF
+    row_height_pdf = 15 # Фіксована висота рядка для PDF (збільшено з 12 до 15)
+    line_height_content = row_height_pdf / 2 # Висота для кожного рядка тексту в multi_cell
 
     for i_day, day_name in enumerate(days):
         # Зберігаємо початкову позицію X та Y для поточного дня
@@ -317,12 +329,15 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
                 current_y = pdf.get_y()
 
                 # multi_cell для двох рядків тексту (Subject + Teacher)
-                pdf.multi_cell(pair_col_width, row_height_pdf / 2, txt=text, border=1, align="C")
+                # Важливо: задаємо висоту, яка дозволить вмістити 2 рядки.
+                pdf.multi_cell(pair_col_width, line_height_content, txt=text, border=1, align="C")
+                
                 # Повертаємося на поточну Y-позицію, щоб продовжити наступну клітинку в тому ж рядку
                 pdf.set_xy(current_x + pair_col_width, current_y)
             
             # Після заповнення всіх пар для поточної групи, переходимо на новий рядок для наступної групи
-            pdf.set_xy(day_start_x + day_col_width, group_current_y + row_height_pdf) # Переміщуємо на початок колонки груп, але на новий рядок.
+            # Повертаємось на X-позицію, яка є початком блоку груп для цього дня (day_start_x + day_col_width)
+            pdf.set_xy(day_start_x + day_col_width, group_current_y + row_height_pdf)
 
         # Після завершення всіх груп для поточного дня, переходимо на новий логічний рядок для наступного дня
         pdf.ln(row_height_pdf * num_groups_per_day) # Перехід на новий рядок на висоту всього блоку дня
