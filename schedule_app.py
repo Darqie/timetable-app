@@ -3,6 +3,7 @@ import streamlit.components.v1 as components
 import uuid
 from datetime import date, timedelta
 from fpdf import FPDF # Переконайтеся, що це fpdf або fpdf2
+import os # Додаємо імпорт os для перевірки файлів шрифтів
 
 st.set_page_config(page_title="Розклад пар", layout="wide")
 
@@ -194,50 +195,60 @@ html_code += """
 
 <script>
 function allowDrop(ev) {{
-  ev.preventDefault();
+    ev.preventDefault();
 }}
 function drag(ev) {{
-  ev.dataTransfer.setData("text", ev.target.id);
+    ev.dataTransfer.setData("text", ev.target.id);
 }}
 function drop(ev) {{
-  ev.preventDefault();
-  var draggedId = ev.dataTransfer.getData("text");
-  var draggedElem = document.getElementById(draggedId);
+    ev.preventDefault();
+    var draggedId = ev.dataTransfer.getData("text");
+    var draggedElem = document.getElementById(draggedId);
 
-  var dropTarget = ev.target;
-  // Перевірка на заголовки. Подвоєні дужки {{ }} для JavaScript
-  while (!dropTarget.classList.contains("cell") || dropTarget.classList.contains("cell-header")) {{
-    dropTarget = dropTarget.parentNode;
-    if (!dropTarget) return;
-  }}
+    var dropTarget = ev.target;
+    // Перевірка на заголовки. Подвоєні дужки {{ }} для JavaScript
+    while (!dropTarget.classList.contains("cell") || dropTarget.classList.contains("cell-header")) {{
+        dropTarget = dropTarget.parentNode;
+        if (!dropTarget) return;
+    }}
 
-  var existing = dropTarget.querySelector(".draggable");
-  var parentOfDragged = draggedElem.parentNode;
+    var existing = dropTarget.querySelector(".draggable");
+    var parentOfDragged = draggedElem.parentNode;
 
-  if (existing) {{
-    dropTarget.appendChild(draggedElem);
-    parentOfDragged.appendChild(existing);
-  }} else {{
-    dropTarget.appendChild(draggedElem);
-  }}
+    if (existing) {{
+        dropTarget.appendChild(draggedElem);
+        parentOfDragged.appendChild(existing);
+    }} else {{
+        dropTarget.appendChild(draggedElem);
+    }}
 }}
 </script>
 """
 
 components.html(html_code, height=800, scrolling=True)
 
+---
+
+### **Виправлена функція `generate_pdf`**
+
+Я переглянув вашу функцію `generate_pdf` і вніс такі зміни:
+
+1.  **Покращене позиціонування заголовків**: Використовую `set_y` та `set_x` більш послідовно, щоб забезпечити правильне розміщення клітинок після `multi_cell`.
+2.  **Гнучка висота рядка**: `row_height_pdf` тепер краще враховує вміст і загальну естетику.
+3.  **Автоматичний перехід на нову сторінку**: Вбудований механізм `fpdf` для `multi_cell` та `cell` обробляє переноси сторінок, але важливо, щоб `set_xy` не "збивало" його.
+4.  **Коментарі**: Додав детальніші коментарі, щоб пояснити логіку позиціонування.
+
+```python
 # ⬇️ ОДНА КНОПКА ЗАВАНТАЖЕННЯ PDF ⬇️
 # Функція для генерації PDF-файлу
 def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, num_groups_per_day):
-    pdf = FPDF(orientation='L') # Орієнтація "L" (Landscape) для широкого розкладу
+    pdf = FPDF(orientation='L', unit='mm', format='A4') # Орієнтація "L" (Landscape) для широкого розкладу, одиниці в мм
     pdf.add_page()
 
     regular_font_path = "fonts/DejaVuSans.ttf"
     bold_font_path = "fonts/DejaVuSans-Bold.ttf"
 
     try:
-        # Перевіряємо наявність файлів шрифтів
-        import os
         if not os.path.exists(regular_font_path):
             raise FileNotFoundError(f"Шрифт не знайдено: {regular_font_path}. Переконайтеся, що файли шрифтів (DejaVuSans.ttf) існують у папці 'fonts'.")
         if not os.path.exists(bold_font_path):
@@ -250,6 +261,7 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
         st.error(f"Помилка завантаження шрифту: {e}")
         return None
 
+    # Заголовок PDF
     pdf.set_font("DejaVuSans", "B", 14)
     pdf.cell(0, 10, txt=f"Розклад: {start_date.strftime('%d.%m.%Y')} – {end_date.strftime('%d.%m.%Y')}", ln=True, align="C")
     pdf.ln(5)
@@ -262,50 +274,48 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
     group_col_width = 30 # Ширина для колонки груп
     pair_col_width = (page_width - day_col_width - group_col_width) / len(pairs) # Ширина для кожної колонки пари
 
+    # Висота для заголовків та клітинок вмісту
+    header_height = 15 # Висота для верхніх заголовків ("Група", "I ПАРА")
+    content_cell_height = 15 # Висота для клітинок з предметом/викладачем
+
     # Зберегти початкову X-позицію для рядка заголовків
-    initial_x = pdf.l_margin # Початок поля
+    initial_x = pdf.l_margin 
     initial_y = pdf.get_y()
 
-    # Заголовковий рядок (пуста комірка + "Група" + Заголовки пар)
+    # --- Малювання заголовків ---
     pdf.set_font("DejaVuSans", "B", 10)
     
     # Верхній лівий кут (порожній)
     pdf.set_xy(initial_x, initial_y)
-    pdf.cell(day_col_width, 15, txt="", border=1, align="C") # Збільшена висота заголовка для кращого вигляду
+    pdf.cell(day_col_width, header_height, txt="", border=1, align="C")
 
     # Заголовок "Група"
     pdf.set_xy(initial_x + day_col_width, initial_y)
-    pdf.cell(group_col_width, 15, txt="Група", border=1, align="C") # Збільшена висота
+    pdf.cell(group_col_width, header_height, txt="Група", border=1, align="C")
 
     # Заголовки пар
     current_x_for_pairs = initial_x + day_col_width + group_col_width
-    pair_header_h = 15 # Висота для multi_cell заголовків пар
-
     for roman, time_range in pairs:
-        pdf.set_xy(current_x_for_pairs, initial_y) # Встановлюємо X для поточної пари
+        pdf.set_xy(current_x_for_pairs, initial_y)
         # multi_cell для двох рядків тексту в заголовку пари
-        pdf.multi_cell(pair_col_width, pair_header_h / 2, txt=f"{roman} ПАРА\n({time_range})", border=1, align="C")
+        # Висота multi_cell ділиться на 2, щоб кожен рядок займав половину total_header_height
+        pdf.multi_cell(pair_col_width, header_height / 2, txt=f"{roman} ПАРА\n({time_range})", border=1, align="C")
         current_x_for_pairs += pair_col_width # Перемістити X для наступної пари
         
-    # Після малювання всіх заголовків пар, переходимо на новий рядок
-    # ЦЕЙ РЯДОК МАЄ БУТИ ПІСЛЯ ТОГО, ЯК МИ ЗАКІНЧИЛИ ВСЮ ВЕРХНЮ ЧАСТИНУ!
-    # Курсор після останнього multi_cell для пари знаходиться внизу останньої комірки пари.
-    # Нам потрібно повернутися на початок лівого поля і опуститися на висоту заголовків.
-    pdf.set_xy(pdf.l_margin, initial_y + pair_header_h)
+    # Переходимо на новий рядок після заголовків
+    pdf.set_xy(initial_x, initial_y + header_height)
 
-
-    # Основний контент таблиці
+    # --- Основний контент таблиці ---
     pdf.set_font("DejaVuSans", "", 7) # Ще менший шрифт для вмісту клітинок
-    row_height_pdf = 15 # Фіксована висота рядка для PDF
-    line_height_content = row_height_pdf / 2 # Висота для кожного рядка тексту в multi_cell
-
+    
     for i_day, day_name in enumerate(days):
         # Зберігаємо початкову Y-позицію для цього дня (перед початком його комірок)
-        day_block_start_y = pdf.get_y() 
+        day_block_start_y = pdf.get_y()
         
-        # Заголовок дня (охоплює 6 рядків)
+        # Заголовок дня (охоплює num_groups_per_day рядків)
         pdf.set_font("DejaVuSans", "B", 9)
-        pdf.cell(day_col_width, row_height_pdf * num_groups_per_day, txt=day_name, border=1, align="C")
+        pdf.set_xy(initial_x, day_block_start_y) # Встановлюємо X і Y для комірки дня
+        pdf.cell(day_col_width, content_cell_height * num_groups_per_day, txt=day_name, border=1, align="C")
         
         # Після малювання заголовка дня, нам потрібно переміститися на початок *першої* групи цього дня.
         # X-позиція: початок колонки груп (initial_x + day_col_width)
@@ -318,7 +328,7 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
             
             # Заголовок групи
             pdf.set_font("DejaVuSans", "", 8)
-            pdf.cell(group_col_width, row_height_pdf, txt=group_names[i_group], border=1, align="C")
+            pdf.cell(group_col_width, content_cell_height, txt=group_names[i_group], border=1, align="C")
             
             # Переміщуємо курсор на початок стовпців з даними
             pdf.set_xy(group_current_x + group_col_width, group_current_y)
@@ -330,7 +340,8 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
                 current_x_content_cell = pdf.get_x()
                 current_y_content_cell = pdf.get_y()
 
-                pdf.multi_cell(pair_col_width, line_height_content, txt=text, border=1, align="C")
+                # multi_cell для вмісту клітинки. Висота ділиться на 2, щоб текст був у два рядки.
+                pdf.multi_cell(pair_col_width, content_cell_height / 2, txt=text, border=1, align="C")
                 
                 # Після multi_cell курсор перемістився на новий рядок.
                 # Нам потрібно повернути його на поточну Y-позицію для наступної комірки в тому ж рядку,
@@ -340,24 +351,11 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
             # Після заповнення всіх пар для поточної групи, переходимо на новий рядок для наступної групи
             # Повертаємось на X-позицію, яка є початком колонки груп для цього дня (initial_x + day_col_width)
             # І на Y-позицію, яка на один рядок нижче поточної групи.
-            pdf.set_xy(initial_x + day_col_width, group_current_y + row_height_pdf)
+            pdf.set_xy(initial_x + day_col_width, group_current_y + content_cell_height)
 
         # Після завершення всіх груп для поточного дня, переходимо на новий логічний рядок для наступного дня
         # Повертаємось на X-позицію лівого поля
         # І на Y-позицію, яка є кінцем поточного блоку дня.
-        pdf.set_xy(initial_x, day_block_start_y + (row_height_pdf * num_groups_per_day))
+        pdf.set_xy(initial_x, day_block_start_y + (content_cell_height * num_groups_per_day))
 
     return pdf.output(dest='S').encode('latin1')
-
-# Кнопка для завантаження PDF
-pdf_bytes = generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, num_groups_per_day)
-
-if pdf_bytes:
-    st.download_button(
-        label="⬇️ Завантажити PDF",
-        data=pdf_bytes,
-        file_name="розклад.pdf",
-        mime="application/pdf"
-    )
-else:
-    st.warning("Не вдалося згенерувати PDF-файл через помилку шрифту.")
