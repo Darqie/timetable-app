@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import uuid
 from datetime import date, timedelta
-from fpdf import FPDF
+from fpdf import FPDF # Переконайтеся, що це fpdf або fpdf2
 
 st.set_page_config(page_title="Розклад пар", layout="wide")
 
@@ -37,7 +37,7 @@ for i in range(5):
             "id": str(uuid.uuid4())
         }
 
-# HTML + CSS
+# HTML + CSS (оновлено для зміни формату нумерації)
 html_code = f"""
 <style>
 .timetable {{
@@ -62,6 +62,7 @@ html_code = f"""
     text-align: center;
     border-radius: 8px;
     display: flex;
+    flex-direction: column; /* Змінено на column для вертикального розташування */
     align-items: center;
     justify-content: center;
 }}
@@ -76,6 +77,7 @@ html_code = f"""
     font-size: 14px;
     color: #444;
     text-align: center;
+    line-height: 1.2; 
 }}
 </style>
 
@@ -87,12 +89,12 @@ html_code = f"""
 for day in days:
     html_code += f'<div class="cell cell-header">{day}</div>'
 
-# Пари зліва + клітинки
+# Пари зліва + клітинки (оновлено: "Пара" і час на різних рядках)
 for i, (roman, time_range) in enumerate(pairs):
     html_code += f'''
         <div class="cell cell-header time-block">
-            <div><strong>{roman}</strong></div>
-            <div>{time_range}</div>
+            <div><strong>{roman} Пара</strong></div> 
+            <div>({time_range})</div>
         </div>
     '''
     for j in range(5):
@@ -143,38 +145,49 @@ function drop(ev) {
 
 components.html(html_code, height=820, scrolling=True)
 
-# PDF збереження
-if st.button("⬇️ Завантажити PDF"):
+# ⬇️ ОДНА КНОПКА ЗАВАНТАЖЕННЯ PDF ⬇️
+# Функція для генерації PDF-файлу
+def generate_pdf(schedule_data, start_date, end_date, pairs, days):
     pdf = FPDF()
     pdf.add_page()
 
     # Шлях до файлу шрифту (відносно кореня вашого додатку)
-    # Переконайтеся, що шлях правильний згідно з розміщенням файлу шрифту
-    font_path = "fonts/DejaVuSans.ttf"
+    font_path = "fonts/DejaVuSans.ttf" 
 
     try:
-        # Додаємо шрифт. 'True' дозволяє використовувати Unicode.
         pdf.add_font("DejaVuSans", "", font_path, uni=True)
-        # Встановлюємо доданий шрифт
         pdf.set_font("DejaVuSans", size=12)
     except Exception as e:
         st.error(f"Помилка завантаження шрифту: {e}. Переконайтеся, що файл {font_path} існує і доступний.")
-        st.stop() # Зупинити виконання, якщо шрифт не завантажився
-
+        return None 
 
     pdf.cell(200, 10, txt=f"Розклад: {start_date.strftime('%d.%m.%Y')} – {end_date.strftime('%d.%m.%Y')}", ln=True, align="C")
-
+    
+    # Оновлено для PDF: "Пара" і час на різних рядках
     for i, (roman, time_range) in enumerate(pairs):
-        pdf.cell(0, 10, txt=f"{roman} ({time_range})", ln=True)
+        pdf.set_font("DejaVuSans", "B", 12) # Жирний шрифт для "Римська цифра Пара"
+        pdf.cell(0, 10, txt=f"{roman} Пара", ln=True) 
+        
+        pdf.set_font("DejaVuSans", "", 12) # Звичайний шрифт для часу
+        pdf.cell(0, 10, txt=f"({time_range})", ln=True)
+        
         for j, day in enumerate(days):
             item = schedule_data[(i, j)]
             text = f"  {day}: {item['subject']} — {item['teacher']} ({item['group']})"
             pdf.cell(0, 10, txt=text, ln=True)
         pdf.ln(2)
 
-    # Зберігаємо файл
-    pdf_output_filename = "розклад.pdf"
-    pdf.output(pdf_output_filename)
+    return pdf.output(dest='S').encode('latin1') 
 
-    with open(pdf_output_filename, "rb") as f:
-        st.download_button("📄 Завантажити PDF-файл", data=f, file_name=pdf_output_filename, mime="application/pdf")
+# Кнопка для завантаження PDF
+pdf_bytes = generate_pdf(schedule_data, start_date, end_date, pairs, days)
+
+if pdf_bytes: 
+    st.download_button(
+        label="⬇️ Завантажити PDF",
+        data=pdf_bytes,
+        file_name="розклад.pdf",
+        mime="application/pdf"
+    )
+else:
+    st.warning("Не вдалося згенерувати PDF-файл через помилку шрифту.")
