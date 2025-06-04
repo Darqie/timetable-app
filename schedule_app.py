@@ -239,15 +239,15 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
         # Перевіряємо наявність файлів шрифтів
         import os
         if not os.path.exists(regular_font_path):
-            raise FileNotFoundError(f"Шрифт не знайдено: {regular_font_path}")
+            raise FileNotFoundError(f"Шрифт не знайдено: {regular_font_path}. Переконайтеся, що файли шрифтів (DejaVuSans.ttf) існують у папці 'fonts'.")
         if not os.path.exists(bold_font_path):
-            raise FileNotFoundError(f"Шрифт не знайдено: {bold_font_path}")
+            raise FileNotFoundError(f"Шрифт не знайдено: {bold_font_path}. Переконайтеся, що файли шрифтів (DejaVuSans-Bold.ttf) існують у папці 'fonts'.")
 
         pdf.add_font("DejaVuSans", "", regular_font_path, uni=True)
         pdf.add_font("DejaVuSans", "B", bold_font_path, uni=True)
         pdf.set_font("DejaVuSans", "", size=10)
     except Exception as e:
-        st.error(f"Помилка завантаження шрифту: {e}. Переконайтеся, що файли шрифтів (регулярний та жирний) існують у папці 'fonts' та правильно вказані шляхи.")
+        st.error(f"Помилка завантаження шрифту: {e}")
         return None
 
     pdf.set_font("DejaVuSans", "B", 14)
@@ -288,27 +288,29 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
         current_x_for_pairs += pair_col_width # Перемістити X для наступної пари
         
     # Після малювання всіх заголовків пар, переходимо на новий рядок
-    pdf.set_xy(initial_x, initial_y + pair_header_h) # Перемістити на Y після заголовків
+    # ЦЕЙ РЯДОК МАЄ БУТИ ПІСЛЯ ТОГО, ЯК МИ ЗАКІНЧИЛИ ВСЮ ВЕРХНЮ ЧАСТИНУ!
+    # Курсор після останнього multi_cell для пари знаходиться внизу останньої комірки пари.
+    # Нам потрібно повернутися на початок лівого поля і опуститися на висоту заголовків.
+    pdf.set_xy(pdf.l_margin, initial_y + pair_header_h)
 
 
     # Основний контент таблиці
     pdf.set_font("DejaVuSans", "", 7) # Ще менший шрифт для вмісту клітинок
-    row_height_pdf = 15 # Фіксована висота рядка для PDF (збільшено з 12 до 15)
+    row_height_pdf = 15 # Фіксована висота рядка для PDF
     line_height_content = row_height_pdf / 2 # Висота для кожного рядка тексту в multi_cell
 
     for i_day, day_name in enumerate(days):
-        # Зберігаємо початкову позицію X та Y для поточного дня
-        day_start_x = pdf.get_x()
-        day_start_y = pdf.get_y()
+        # Зберігаємо початкову Y-позицію для цього дня (перед початком його комірок)
+        day_block_start_y = pdf.get_y() 
         
         # Заголовок дня (охоплює 6 рядків)
         pdf.set_font("DejaVuSans", "B", 9)
         pdf.cell(day_col_width, row_height_pdf * num_groups_per_day, txt=day_name, border=1, align="C")
         
-        # Переміщуємо курсор для першої групи цього дня
-        # X-позиція: початок колонки груп (day_start_x + day_col_width)
-        # Y-позиція: початок рядка дня (day_start_y)
-        pdf.set_xy(day_start_x + day_col_width, day_start_y)
+        # Після малювання заголовка дня, нам потрібно переміститися на початок *першої* групи цього дня.
+        # X-позиція: початок колонки груп (initial_x + day_col_width)
+        # Y-позиція: початок блоку дня (day_block_start_y)
+        pdf.set_xy(initial_x + day_col_width, day_block_start_y)
 
         for i_group in range(num_groups_per_day):
             group_current_x = pdf.get_x() # Зберігаємо X на початку колонки групи
@@ -325,22 +327,25 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
                 item = schedule_data[(i_day, i_group, i_pair)]
                 text = f"{item['subject']}\n{item['teacher']}" # Лише предмет та викладач
 
-                current_x = pdf.get_x()
-                current_y = pdf.get_y()
+                current_x_content_cell = pdf.get_x()
+                current_y_content_cell = pdf.get_y()
 
-                # multi_cell для двох рядків тексту (Subject + Teacher)
-                # Важливо: задаємо висоту, яка дозволить вмістити 2 рядки.
                 pdf.multi_cell(pair_col_width, line_height_content, txt=text, border=1, align="C")
                 
-                # Повертаємося на поточну Y-позицію, щоб продовжити наступну клітинку в тому ж рядку
-                pdf.set_xy(current_x + pair_col_width, current_y)
+                # Після multi_cell курсор перемістився на новий рядок.
+                # Нам потрібно повернути його на поточну Y-позицію для наступної комірки в тому ж рядку,
+                # і перемістити X на початок наступної колонки.
+                pdf.set_xy(current_x_content_cell + pair_col_width, current_y_content_cell)
             
             # Після заповнення всіх пар для поточної групи, переходимо на новий рядок для наступної групи
-            # Повертаємось на X-позицію, яка є початком блоку груп для цього дня (day_start_x + day_col_width)
-            pdf.set_xy(day_start_x + day_col_width, group_current_y + row_height_pdf)
+            # Повертаємось на X-позицію, яка є початком колонки груп для цього дня (initial_x + day_col_width)
+            # І на Y-позицію, яка на один рядок нижче поточної групи.
+            pdf.set_xy(initial_x + day_col_width, group_current_y + row_height_pdf)
 
         # Після завершення всіх груп для поточного дня, переходимо на новий логічний рядок для наступного дня
-        pdf.ln(row_height_pdf * num_groups_per_day) # Перехід на новий рядок на висоту всього блоку дня
+        # Повертаємось на X-позицію лівого поля
+        # І на Y-позицію, яка є кінцем поточного блоку дня.
+        pdf.set_xy(initial_x, day_block_start_y + (row_height_pdf * num_groups_per_day))
 
     return pdf.output(dest='S').encode('latin1')
 
