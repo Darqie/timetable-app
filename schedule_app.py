@@ -4,14 +4,13 @@ import uuid
 from datetime import date, timedelta
 from fpdf import FPDF
 import os
-import sqlite3
 
 # --- Налаштування Streamlit ---
 st.set_page_config(page_title="Розклад пар", layout="wide")
 
 # --- Константы ---
-DB_NAME = "schedule.db"
-MONDAY_INITIAL_DATE = date(2025, 6, 2) # Понеділок для початкової дати
+# MONDAY_INITIAL_DATE = date(2025, 6, 2) # Понеділок для початкової дати - можна залишити або прибрати, якщо не потрібна конкретна дата
+MONDAY_INITIAL_DATE = date.today() - timedelta(days=date.today().weekday()) # Поточний понеділок
 
 PAIRS = [
     ("I", "8:30 – 9:50"),
@@ -26,97 +25,38 @@ NUM_GROUPS_PER_DAY = 6
 
 GROUP_NAMES = [f"Група {i+1}" for i in range(NUM_GROUPS_PER_DAY)]
 
-# --- Функції для роботи з базою даних SQLite ---
+# --- Функції для завантаження/збереження даних (тепер лише в st.session_state) ---
 
-def get_db_connection():
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row # Дозволяє доступ до колонок за іменем
-    return conn
+# Функції, що раніше працювали з БД, тепер не потрібні.
+# Дані завантажуються/зберігаються безпосередньо в st.session_state.schedule_display_data.
 
-def init_db():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS schedules (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            week_start_date TEXT NOT NULL,
-            day_index INTEGER NOT NULL,
-            group_index INTEGER NOT NULL,
-            pair_index INTEGER NOT NULL,
-            subject TEXT,
-            teacher TEXT,
-            item_id TEXT NOT NULL UNIQUE,
-            UNIQUE(week_start_date, day_index, group_index, pair_index)
-        )
-    """)
-    conn.commit()
-    conn.close()
+def initialize_schedule_data(current_start_date):
+    """
+    Ініціалізує або скидає дані розкладу для нової сесії/тижня.
+    Дані зберігаються у st.session_state.
+    """
+    # Генеруємо шаблонний розклад при кожній ініціалізації/зміні тижня
+    # Якщо ви хочете, щоб розклад "очищався" при переході на новий тиждень, 
+    # це є природною поведінкою без постійного зберігання.
+    new_data = {}
+    for i_day in range(len(DAYS)):
+        for i_group in range(NUM_GROUPS_PER_DAY): 
+            for i_pair in range(len(PAIRS)):
+                key = (i_day, i_group, i_pair)
+                new_data[key] = {
+                    "teacher": f"Вч.Д{i_day+1}.Г{i_group+1}.П{i_pair+1}",
+                    "group": GROUP_NAMES[i_group],
+                    "subject": f"Предмет {i_pair+1}-{i_group+1}",
+                    "id": str(uuid.uuid4()) # Унікальний ID для key Streamlit віджетів
+                }
+    return new_data
 
-def save_schedule(week_start_date, schedule_data):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # Видаляємо всі записи для цього тижня, щоб уникнути дублікатів перед збереженням
-    cursor.execute("DELETE FROM schedules WHERE week_start_date = ?", (week_start_date.isoformat(),))
-    
-    for (day_idx, group_idx, pair_idx), item in schedule_data.items():
-        cursor.execute("""
-            INSERT INTO schedules (week_start_date, day_index, group_index, pair_index, subject, teacher, item_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (week_start_date.isoformat(), day_idx, group_idx, pair_idx, item['subject'], item['teacher'], item['id']))
-    
-    conn.commit()
-    conn.close()
-    st.success(f"Розклад для тижня {week_start_date.strftime('%d.%m.%Y')} збережено!")
-
-def load_schedule(week_start_date):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM schedules WHERE week_start_date = ?", (week_start_date.isoformat(),))
-    rows = cursor.fetchall()
-    conn.close()
-    
-    loaded_data = {}
-    if rows:
-        for row in rows:
-            key = (row['day_index'], row['group_index'], row['pair_index'])
-            loaded_data[key] = {
-                "teacher": row['teacher'],
-                "group": GROUP_NAMES[row['group_index']], 
-                "subject": row['subject'],
-                "id": row['item_id']
-            }
-        st.info(f"Розклад для тижня {week_start_date.strftime('%d.%m.%Y')} завантажено.")
-    else:
-        st.warning(f"Розклад для тижня {week_start_date.strftime('%d.%m.%Y')} не знайдено в базі даних. Створюється шаблонний розклад.")
-        for i_day in range(len(DAYS)):
-            for i_group in range(NUM_GROUPS_PER_DAY): 
-                for i_pair in range(len(PAIRS)):
-                    key = (i_day, i_group, i_pair)
-                    loaded_data[key] = {
-                        "teacher": f"Вч.{chr(65 + i_day)}.{i_group+1}.{i_pair+1}",
-                        "group": GROUP_NAMES[i_group],
-                        "subject": f"Предм.{i_pair+1}-{i_group+1}",
-                        "id": str(uuid.uuid4())
-                    }
-    return loaded_data
-
-def get_all_saved_weeks():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT DISTINCT week_start_date FROM schedules ORDER BY week_start_date DESC")
-    weeks = [date.fromisoformat(row['week_start_date']) for row in cursor.fetchall()]
-    conn.close()
-    return weeks
-
-# --- Ініціалізація бази даних та стану сесії ---
-init_db()
-
+# --- Ініціалізація стану сесії ---
 if 'start_date' not in st.session_state:
     st.session_state.start_date = MONDAY_INITIAL_DATE 
 
 if 'schedule_display_data' not in st.session_state:
-    st.session_state.schedule_display_data = load_schedule(st.session_state.start_date)
+    st.session_state.schedule_display_data = initialize_schedule_data(st.session_state.start_date)
 
 # --- Функції для навігації по тижнях ---
 def get_monday_of_week(target_date):
@@ -125,15 +65,20 @@ def get_monday_of_week(target_date):
 
 def set_week_and_rerun(new_start_date):
     st.session_state.start_date = new_start_date
-    st.session_state.schedule_display_data = load_schedule(new_start_date) 
+    # При зміні тижня, генеруємо новий (порожній або шаблонний) розклад
+    # Якщо ви хочете, щоб дані "зберігалися" при навігації, 
+    # вам доведеться реалізувати якийсь механізм (наприклад, JSON-файли для кожного тижня), 
+    # але це не база даних.
+    st.session_state.schedule_display_data = initialize_schedule_data(new_start_date) 
     st.experimental_rerun()
 
 # --- UI Компоненти Streamlit ---
 st.markdown("<h2 style='text-align: center; margin-bottom: 10px;'>Розклад пар</h2>", unsafe_allow_html=True)
 st.markdown("---")
 
-# ----- Блок Опцій: Вибір тижня, Зберегти, Завантажити -----
-col_label, col_date_input, col_spacer_date, col_load_select, col_save_btn, col_download_btn = st.columns([0.13, 0.15, 0.03, 0.15, 0.1, 0.14])
+# ----- Блок Опцій: Вибір тижня -----
+# Тепер без "Зберегти" та "Завантажити" з бази даних
+col_label, col_date_input, col_spacer_date, col_placeholder_load_select = st.columns([0.13, 0.15, 0.03, 0.69])
 
 with col_label:
     st.markdown(
@@ -164,18 +109,9 @@ with col_date_input:
 with col_spacer_date:
     st.write("")
 
-with col_load_select:
-    saved_weeks = get_all_saved_weeks()
-    saved_weeks_formatted = {wk.strftime('%d.%m.%Y'): wk for wk in saved_weeks}
-    
-    options = ["Обрати збережений розклад"] + list(saved_weeks_formatted.keys())
-    
-    selected_saved_week_str = st.selectbox("Завантажити:", options=options, key="load_week_selector")
-    
-    if selected_saved_week_str != "Обрати збережений розклад":
-        selected_saved_week_date = saved_weeks_formatted[selected_saved_week_str]
-        if selected_saved_week_date != st.session_state.start_date:
-            set_week_and_rerun(selected_saved_week_date)
+# Пусте місце замість селектора завантаження з БД та кнопок збереження/завантаження
+with col_placeholder_load_select:
+    st.write("") 
 
 end_date = st.session_state.start_date + timedelta(days=4)
 
@@ -289,22 +225,15 @@ div[data-testid="column"] {
 st.markdown("<div class='table-container'>", unsafe_allow_html=True)
 
 # --- Верхній ряд заголовків: Порожній кут, Заголовок "Група", Заголовки Пар ---
-# Розраховуємо ширини колонок для верхнього ряду
-# 120px для порожньої комірки, 80px для "Групи", і решта порівну для пар
-# Ваги колонок: [фіксована ширина, фіксована ширина] + [відносна вага для кожної пари]
-# Загальна ширина вікна Streamlit є гнучкою, тому ми використовуємо комбінацію фіксованих пікселів і відносних ваг.
-# Streamlit буде намагатися пропорційно розподілити решту простору.
-col_weights_header = [120, 80] + [1 for _ in PAIRS] # 120px, 80px, а потім 5 рівних частин
+col_weights_header = [120, 80] + [1 for _ in PAIRS]
 header_cols = st.columns(col_weights_header)
 
 with header_cols[0]:
-    # Верхній лівий кут таблиці
     st.markdown("<div class='cell-style header-cell-top' style='border-top-left-radius: 12px;'></div>", unsafe_allow_html=True)
 with header_cols[1]:
-    # Заголовок "Група"
     st.markdown("<div class='cell-style header-cell-top group-header-cell'>Група</div>", unsafe_allow_html=True)
 for i, (roman, time_range) in enumerate(PAIRS):
-    with header_cols[i + 2]: # +2 тому що перші дві колонки вже зайняті
+    with header_cols[i + 2]:
         right_border_class = "no-right-border" if i == len(PAIRS) - 1 else ""
         border_radius_style = "border-top-right-radius: 12px;" if i == len(PAIRS) - 1 else ""
         st.markdown(f'''
@@ -315,24 +244,13 @@ for i, (roman, time_range) in enumerate(PAIRS):
         ''', unsafe_allow_html=True)
 
 # --- Основний вміст таблиці: Дні, Групи, Поля вводу ---
-# Для кожного дня створюємо один "головний ряд" Streamlit
-# Цей ряд буде складатися з двох колонок:
-# 1. Заголовок дня (розтягується вертикально)
-# 2. Контейнер для всіх груп та їхніх полів вводу для цього дня
 for i_day, day_name in enumerate(DAYS):
     is_last_day = (i_day == len(DAYS) - 1)
-
-    # Розраховуємо загальну висоту для заголовка дня, щоб він розтягувався на всі групи
-    # Кожна клітинка має min-height 60px
     day_header_height = NUM_GROUPS_PER_DAY * 60
 
-    # Створюємо головні колонки для дня
-    # 120 - це ширина для заголовка дня.
-    # Їхня сума повинна відповідати загальній кількості колонок, які будуть вкладені.
-    # [120, 80 + 5* (відносна ширина)] = [120, 80 + 5]
-    day_main_cols = st.columns([120, 80 + len(PAIRS)]) # 120px для дня, решта - сума ваг груп та пар
+    day_main_cols = st.columns([120, 80 + len(PAIRS)]) 
 
-    with day_main_cols[0]: # Колонка для заголовка дня
+    with day_main_cols[0]:
         bottom_border_class = "no-bottom-border" if is_last_day else ""
         border_radius_style = "border-bottom-left-radius: 12px;" if is_last_day else ""
         st.markdown(f"""
@@ -341,23 +259,18 @@ for i_day, day_name in enumerate(DAYS):
             </div>
         """, unsafe_allow_html=True)
 
-    with day_main_cols[1]: # Колонка для всіх груп і їхніх пар
-        # Всередині цієї колонки ми створюємо рядки для кожної групи
+    with day_main_cols[1]:
         for i_group in range(NUM_GROUPS_PER_DAY):
-            # Перевіряємо, чи це остання група в останньому дні, щоб прибрати нижню рамку
             is_last_row_overall = is_last_day and (i_group == NUM_GROUPS_PER_DAY - 1)
             bottom_border_class_for_data = "no-bottom-border" if is_last_row_overall else ""
 
-            # Створюємо колонки для заголовка групи та 5 пар для цього конкретного ряду
-            # [80] для групи, і [1 for _ in PAIRS] для 5 пар
             group_and_pairs_cols = st.columns([80] + [1 for _ in PAIRS])
 
-            with group_and_pairs_cols[0]: # Колонка для заголовка групи
-                # Тут вже є рамка справа і знизу
+            with group_and_pairs_cols[0]:
                 st.markdown(f"<div class='cell-style group-header-cell {bottom_border_class_for_data}'>{GROUP_NAMES[i_group]}</div>", unsafe_allow_html=True)
             
             for i_pair in range(len(PAIRS)):
-                with group_and_pairs_cols[i_pair + 1]: # Колонка для полів вводу пари
+                with group_and_pairs_cols[i_pair + 1]:
                     right_border_class = "no-right-border" if i_pair == len(PAIRS) - 1 else ""
                     
                     current_item = st.session_state.schedule_display_data.get((i_day, i_group, i_pair), {
@@ -382,16 +295,19 @@ for i_day, day_name in enumerate(DAYS):
 st.markdown("</div>", unsafe_allow_html=True) # Закриття table-container
 
 
-# --- Кнопки збереження та завантаження ---
-with col_save_btn:
-    if st.button("💾 Зберегти", key="save_button_action"):
-        save_schedule(st.session_state.start_date, st.session_state.schedule_display_data)
+# --- Кнопки для PDF ---
+# Кнопки "Зберегти" немає, оскільки немає постійного зберігання.
+# Залишимо лише кнопку "Завантажити PDF".
 
 # Назва файлу PDF з вибраним тижнем
 pdf_file_name = f"розклад_{st.session_state.start_date.strftime('%d.%m')}–{end_date.strftime('%d.%m')}.pdf"
 
-# Кнопка "Завантажити PDF"
-with col_download_btn:
+st.markdown("<hr>", unsafe_allow_html=True) # Роздільник для кнопок
+
+# Розміщення кнопки "Завантажити PDF"
+col_spacer_left, col_download_pdf, col_spacer_right = st.columns([1, 0.2, 1])
+
+with col_download_pdf:
     pdf_bytes = generate_pdf(st.session_state.schedule_display_data, st.session_state.start_date, end_date, PAIRS, DAYS, GROUP_NAMES, NUM_GROUPS_PER_DAY)
 
     if pdf_bytes:
