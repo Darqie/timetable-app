@@ -6,7 +6,7 @@ from fpdf import FPDF
 import os
 import json
 import psycopg2
-from sqlalchemy import text
+from sqlalchemy import text # Імпортуємо text для виконання DDL-запитів через SQLAlchemy
 
 st.set_page_config(page_title="Розклад пар", layout="wide")
 
@@ -18,11 +18,12 @@ def get_db_connection():
         conn = st.connection('postgresql', type='sql')
         # Спроба виконати простий запит для перевірки з'єднання
         # conn.query("SELECT 1;") # Цей рядок можна використовувати для швидкої перевірки, але він може бути зайвим
+        st.success("Успішно підключено до PostgreSQL через st.connection!")
         return conn
     except Exception as e:
         st.error(f"Помилка підключення до бази даних: {e}")
         st.info("Перевірте ваш файл .streamlit/secrets.toml або налаштування секретів у Streamlit Cloud.")
-        st.stop()
+        st.stop() # Зупиняємо виконання додатка, якщо немає з'єднання
 
 def init_db(conn):
     """Ініціалізує базу даних, створює таблицю, якщо її немає.
@@ -37,10 +38,9 @@ def init_db(conn):
             );
         '''))
         conn.session.commit() # Підтверджуємо зміни
-        st.success("База даних ініціалізована. Таблиця 'schedule' існує або була створена.") # Додано для налагодження
+        st.success("База даних ініціалізована. Таблиця 'schedule' існує або була створена.")
     except Exception as e:
         # Якщо виникає помилка під час створення таблиці, відкатуємо транзакцію
-        # і виводимо помилку
         conn.session.rollback()
         st.error(f"Помилка при ініціалізації бази даних (створення таблиці): {e}")
         st.stop() # Зупиняємо виконання, якщо не вдалося створити таблицю
@@ -69,9 +69,6 @@ def save_schedule_to_db(conn, week_start_date, schedule_data):
         # conn.query автоматично commit() для INSERT/UPDATE для більшості випадків
         st.toast("Розклад збережено!")
     except Exception as e:
-        # Важливо: якщо conn.query не робить rollback автоматично для помилок,
-        # то може знадобитися conn.session.rollback() тут.
-        # Але зазвичай Streamlit Connection обробляє це сам.
         st.error(f"Помилка при збереженні розкладу: {e}")
 
 def load_schedule_from_db(conn, week_start_date):
@@ -94,12 +91,15 @@ def load_schedule_from_db(conn, week_start_date):
         return None
     except Exception as e:
         st.error(f"Помилка при завантаженні розкладу: {e}")
+        # Ця помилка "UndefinedTable" свідчить про те, що таблиця не існує.
+        # Це очікувана поведінка при першому запуску, якщо таблиці ще немає.
+        # Ми можемо повернути None і дозволити ініціалізації створити її.
         return None
 
 
 # Отримання з'єднання з базою даних
 db_conn = get_db_connection()
-init_db(db_conn) # Ініціалізація бази даних при старті додатку
+init_db(db_conn) # Ініціалізація бази даних при старті додатка
 
 # Розміщення назви "Розклад пар" по центру
 st.markdown("<h2 style='text-align: center; margin-bottom: 10px;'>Розклад пар</h2>", unsafe_allow_html=True)
@@ -219,6 +219,7 @@ if not st.session_state.get('schedule_data') or not st.session_state.schedule_da
                     "id": str(uuid.uuid4())
                 }
     st.session_state.schedule_data = initial_schedule_data
+    # Якщо дані завантажуються вперше, зберігаємо їх у БД
     save_schedule_to_db(db_conn, st.session_state.start_date, st.session_state.schedule_data)
 
 # Отримуємо поточні дані розкладу для відображення
@@ -362,11 +363,16 @@ for i_day, day_name in enumerate(days):
             })
             item_id = item.get('id', str(uuid.uuid4()))
             
+            # Екранування даних для HTML атрибутів, щоб уникнути проблем з лапками
+            # Додаємо replace для лапок, щоб не ламався HTML/JS
+            escaped_subject = item["subject"].replace('"', '&quot;')
+            escaped_teacher = item["teacher"].replace('"', '&quot;')
+
             html_code += f'''
             <div class="cell" ondrop="drop(event, {i_day}, {i_group}, {i_pair})" ondragover="allowDrop(event)">
                 <div id="{item_id}" class="draggable" draggable="true"
                      data-day="{i_day}" data-group="{i_group}" data-pair="{i_pair}"
-                     data-subject="{item['subject']}" data-teacher="{item['teacher']}"
+                     data-subject="{escaped_subject}" data-teacher="{escaped_teacher}"
                      ondragstart="drag(event)">
                     <strong>{item["subject"]}</strong><br>
                     {item["teacher"]}
@@ -395,9 +401,9 @@ html_code += """
         ev.dataTransfer.setData("fromDay", ev.target.dataset.day);
         ev.dataTransfer.setData("fromGroup", ev.target.dataset.group);
         ev.dataTransfer.setData("fromPair", ev.target.dataset.pair);
-        // Ось ці рядки потрібно перевірити:
-        ev.dataTransfer.setData("fromSubject", ev.target.dataset.subject); // Повинно бути ev.target.dataset.subject
-        ev.dataTransfer.setData("fromTeacher", ev.target.dataset.teacher); // Повинно бути ev.target.dataset.teacher
+        // Тут ми вже беремо з dataset, як і має бути
+        ev.dataTransfer.setData("fromSubject", ev.target.dataset.subject);
+        ev.dataTransfer.setData("fromTeacher", ev.target.dataset.teacher);
     }
 
     function drop(ev, toDay, toGroup, toPair) {
@@ -408,10 +414,10 @@ html_code += """
         var fromDay = parseInt(ev.dataTransfer.getData("fromDay"));
         var fromGroup = parseInt(ev.dataTransfer.getData("fromGroup"));
         var fromPair = parseInt(ev.dataTransfer.getData("fromPair"));
-        // Ці рядки можна видалити або залишити, але вони не використовуються для обміну даними
+        // Ці змінні (fromSubject, fromTeacher) більше не використовуються для обміну,
+        // оскільки ми беремо їх з draggedElem.dataset після переміщення
         // var fromSubject = ev.dataTransfer.getData("fromSubject");
         // var fromTeacher = ev.dataTransfer.getData("fromTeacher");
-
 
         var dropTarget = ev.target;
         while (!dropTarget.classList.contains("cell") || dropTarget.classList.contains("cell-header")) {
@@ -422,18 +428,22 @@ html_code += """
         var existing = dropTarget.querySelector(".draggable");
 
         if (existing) {
-            dropTarget.appendChild(draggedElem);
+            // Swap logic
+            dropTarget.appendChild(draggedElem); // Place dragged item into new cell
             var originalParentOfDragged = document.querySelector(`.cell[ondrop*="drop(event, ${fromDay}, ${fromGroup}, ${fromPair})"]`);
             if (originalParentOfDragged) {
-                 originalParentOfDragged.appendChild(existing);
+                 originalParentOfDragged.appendChild(existing); // Place existing item into original cell
+                 // Update dataset for swapped item
                  existing.dataset.day = fromDay;
                  existing.dataset.group = fromGroup;
                  existing.dataset.pair = fromPair;
             }
         } else {
+            // Just move logic
             dropTarget.appendChild(draggedElem);
         }
         
+        // Update dataset for the dragged item
         draggedElem.dataset.day = toDay;
         draggedElem.dataset.group = toGroup;
         draggedElem.dataset.pair = toPair;
@@ -443,8 +453,8 @@ html_code += """
             var day = parseInt(el.dataset.day);
             var group = parseInt(el.dataset.group);
             var pair = parseInt(el.dataset.pair);
-            var subject = el.dataset.subject; // Беремо з data-атрибута
-            var teacher = el.dataset.teacher; // Беремо з data-атрибута
+            var subject = el.dataset.subject; // Беремо з data-атрибута елемента
+            var teacher = el.dataset.teacher; // Беремо з data-атрибута елемента
             var id = el.id;
             updatedSchedule[`${day},${group},${pair}`] = {
                 subject: subject,
@@ -458,9 +468,11 @@ html_code += """
 </script>
 """
 
+# Видалено 'key' з components.html, як було виправлено
 component_value = components.html(html_code, height=800, scrolling=True)
 
-if component_value is not None:
+# Додано перевірку типу для component_value
+if component_value is not None and isinstance(component_value, dict):
     new_schedule_data = {}
     for key_str, item in component_value.items():
         day_idx, group_idx, pair_idx = map(int, key_str.split(','))
@@ -470,6 +482,11 @@ if component_value is not None:
         st.session_state.schedule_data = new_schedule_data
         save_schedule_to_db(db_conn, st.session_state.start_date, st.session_state.schedule_data)
         st.experimental_rerun()
+elif component_value is None:
+    st.info("HTML-компонент ще не повернув дані. Спробуйте взаємодіяти з розкладом.")
+else:
+    st.error(f"Неочікуваний тип даних від HTML-компонента: {type(component_value)}. Повинно бути 'dict'.")
+
 
 def generate_pdf(schedule_data_pdf, start_date_pdf, end_date_pdf, pairs_pdf, days_pdf, group_names_pdf, num_groups_per_day_pdf):
     pdf = FPDF(orientation='L', unit='mm', format='A4')
