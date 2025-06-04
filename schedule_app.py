@@ -10,7 +10,7 @@ st.set_page_config(page_title="Розклад пар", layout="wide")
 # Розміщення назви "Розклад пар" по центру
 st.markdown("<h2 style='text-align: center; margin-bottom: 10px;'>Розклад пар</h2>", unsafe_allow_html=True)
 
----
+st.markdown("---")
 
 # ----- Блок Опцій: Вибір тижня, Зберегти, Завантажити -----
 
