@@ -15,22 +15,47 @@ st.markdown("---") # Розділювач
 # ----- Блок Опцій: Вибір тижня, Зберегти, Завантажити -----
 
 # Використовуємо st.columns для розміщення елементів в одному рядку.
-# Налаштовуємо пропорції так, щоб лейбл був поруч з полем вибору дати.
-# col_label: для тексту "Перший день тижня:"
-# col_date_input: для самого st.date_input
-# col_save_btn, col_download_btn: для кнопок
-# _: для вільного простору
-col_label, col_date_input, col_save_btn, col_download_btn, _ = st.columns([0.13, 0.15, 0.1, 0.14, 0.48]) # Пропорції можуть потребувати тонкого налаштування для ідеального вигляду
+#col_label: для тексту "Перший день тижня:"
+#col_date_input: для самого st.date_input
+#col_save_btn, col_download_btn: для кнопок
+#_: для вільного простору
+# Adjusted proportions for tighter fit and alignment
+col_label, col_date_input, col_spacer_date, col_save_btn, col_download_btn, _ = st.columns([0.13, 0.15, 0.03, 0.1, 0.14, 0.45])
+
 
 with col_label:
-    # Використовуємо st.markdown для тексту, щоб мати контроль над стилями
-    # margin-top вирівнює текст по центру з полем вводу дати
-    st.markdown("<p style='margin-top: 25px; text-align: right;'>**Перший день тижня:**</p>", unsafe_allow_html=True)
+    # Custom CSS for the label to remove default margins and align it
+    # Use st.write with unsafe_allow_html for precise control over CSS
+    st.markdown(
+        """
+        <style>
+        .compact-label {
+            display: flex;
+            align-items: center; /* Vertically center with the date input */
+            height: 100%; /* Take full height of the column */
+            padding-top: 0px; /* Remove top padding */
+            padding-bottom: 0px; /* Remove bottom padding */
+            margin-top: 0px; /* Remove top margin */
+            margin-bottom: 0px; /* Remove bottom margin */
+            text-align: right; /* Align text to the right within its column */
+            line-height: 1; /* Adjust line height for compactness */
+        }
+        </style>
+        <p class="compact-label">Перший день тижня:</p>
+        """,
+        unsafe_allow_html=True
+    )
 
 
 with col_date_input:
-    # st.date_input з порожнім лейблом, оскільки лейбл вже є в col_label
+    # st.date_input with an empty label to avoid double labels.
+    # The label "Перший день тижня:" is handled by the markdown in col_label.
+    # The default padding/margin of st.date_input itself is usually minimal.
     start_date = st.date_input("", date(2025, 6, 2), key="start_date_picker")
+
+# This is an empty spacer column to push buttons further right if needed, adjust its size accordingly
+with col_spacer_date:
+    st.write("") # Or a small st.empty()
 
 
 # Оскільки start_date тепер визначено в Streamlit UI, end_date може бути обчислено одразу.
@@ -38,7 +63,8 @@ with col_date_input:
 end_date = start_date + timedelta(days=4)
 
 # Відображення тижня по центру, одразу під назвою "Розклад пар"
-st.markdown(f"<h3 style='text-align: center; margin-top: 0px;'>📆 {start_date.strftime('%d.%m.%Y')} – {end_date.strftime('%d.%m.%Y')}</h3>", unsafe_allow_html=True)
+# Adjusted margin-top and margin-bottom for compactness
+st.markdown(f"<h3 style='text-align: center; margin-top: 5px; margin-bottom: 5px;'>📆 {start_date.strftime('%d.%m.%Y')} – {end_date.strftime('%d.%m.%Y')}</h3>", unsafe_allow_html=True)
 
 st.markdown("---") # Розділювач
 
@@ -285,11 +311,11 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
     header_height = 15
     content_cell_height = 15
 
-    initial_x = pdf.l_margin 
+    initial_x = pdf.l_margin
     initial_y = pdf.get_y()
 
     pdf.set_font("DejaVuSans", "B", 10)
-    
+
     pdf.set_xy(initial_x, initial_y)
     pdf.cell(day_col_width, header_height, txt="", border=1, align="C")
 
@@ -301,14 +327,14 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
         pdf.set_xy(current_x_for_pairs, initial_y)
         pdf.multi_cell(pair_col_width, header_height / 2, txt=f"{roman} ПАРА\n({time_range})", border=1, align="C")
         current_x_for_pairs += pair_col_width
-    
+
     pdf.set_xy(initial_x, initial_y + header_height)
 
     pdf.set_font("DejaVuSans", "", 7)
-    
+
     for i_day, day_name in enumerate(days):
         required_height_for_day_block = content_cell_height * num_groups_per_day
-        
+
         if pdf.get_y() + required_height_for_day_block > (pdf.h - pdf.b_margin):
             pdf.add_page()
             pdf.set_font("DejaVuSans", "B", 10)
@@ -316,7 +342,7 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
             pdf.cell(day_col_width, header_height, txt="", border=1, align="C")
             pdf.set_xy(initial_x + day_col_width, pdf.t_margin)
             pdf.cell(group_col_width, header_height, txt="Група", border=1, align="C")
-            
+
             current_x_for_pairs = initial_x + day_col_width + group_col_width
             for roman, time_range in pairs:
                 pdf.set_xy(current_x_for_pairs, pdf.t_margin)
@@ -337,7 +363,7 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
         pdf.set_font("DejaVuSans", "B", 12)
         pdf.set_text_color(0, 0, 0)
         pdf.rotate(90, day_text_center_x, day_text_center_y)
-        
+
         text_width = pdf.get_string_width(day_name)
         pdf.set_xy(day_text_center_x - text_width / 2, day_text_center_y - pdf.font_size / 2)
         pdf.cell(text_width, pdf.font_size, txt=day_name, align="C")
@@ -347,12 +373,12 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
         for i_group in range(num_groups_per_day):
             current_row_start_x = initial_x + day_col_width
             current_row_start_y = day_block_start_y + (i_group * content_cell_height)
-            
+
             pdf.set_xy(current_row_start_x, current_row_start_y)
 
             pdf.set_font("DejaVuSans", "", 8)
             pdf.cell(group_col_width, content_cell_height, txt=group_names[i_group], border=1, align="C")
-            
+
             pdf.set_xy(current_row_start_x + group_col_width, current_row_start_y)
 
             pdf.set_font("DejaVuSans", "", 7)
@@ -364,9 +390,9 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
                 cell_start_y = pdf.get_y()
 
                 pdf.multi_cell(pair_col_width, content_cell_height / 2, txt=text, border=1, align="C")
-                
+
                 pdf.set_xy(cell_start_x + pair_col_width, cell_start_y)
-            
+
         pdf.set_xy(initial_x, day_block_start_y + required_height_for_day_block)
 
     return pdf.output(dest='S').encode('latin1')
