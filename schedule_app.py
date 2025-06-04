@@ -16,7 +16,7 @@ def get_db_connection():
     """Створює та кешує з'єднання з базою даних PostgreSQL та ініціалізує таблицю."""
     try:
         conn = st.connection('postgresql', type='sql')
-
+        
         # Ініціалізація бази даних відбувається тут, всередині кешованої функції
         # Це гарантує, що таблиця буде створена при першому отриманні з'єднання
         try:
@@ -34,7 +34,7 @@ def get_db_connection():
             st.error(f"Помилка при ініціалізації бази даних (створення таблиці): {e}")
             # У випадку критичної помилки ініціалізації, зупиняємо додаток
             st.stop()
-
+        
         st.success("Успішно підключено до PostgreSQL через st.connection!")
         return conn
     except Exception as e:
@@ -54,7 +54,7 @@ def save_schedule_to_db(conn, week_start_date, schedule_data):
         serializable_schedule_data[key_str] = item
 
     data_json = json.dumps(serializable_schedule_data, ensure_ascii=False)
-
+    
     try:
         conn.query(
             "INSERT INTO schedule (week_start_date, data) VALUES (:week_start_date, :data) ON CONFLICT (week_start_date) DO UPDATE SET data = EXCLUDED.data;",
@@ -80,7 +80,7 @@ def load_schedule_from_db(conn, week_start_date):
     try:
         df = conn.query("SELECT data FROM schedule WHERE week_start_date = :week_start_date;",
                         params={"week_start_date": week_start_date_str})
-
+        
         if not df.empty:
             loaded_data_json = df.iloc[0]['data']
             deserialized_data = json.loads(loaded_data_json)
@@ -378,7 +378,7 @@ for i_day, day_name in enumerate(days):
                 "teacher": "Немає", "group": group_names[i_group], "subject": "Пусто", "id": str(uuid.uuid4())
             })
             item_id = item.get('id', str(uuid.uuid4()))
-
+            
             escaped_subject = item["subject"].replace('"', '&quot;')
             escaped_teacher = item["teacher"].replace('"', '&quot;')
 
@@ -415,8 +415,8 @@ html_code += """
         ev.dataTransfer.setData("fromDay", ev.target.dataset.day);
         ev.dataTransfer.setData("fromGroup", ev.target.dataset.group);
         ev.dataTransfer.setData("fromPair", ev.target.dataset.pair);
-        ev.dataTransfer.setData("fromSubject", ev.dataTransfer.getData("subject")); // Використовуйте getData для data-атрибутів
-        ev.dataTransfer.setData("fromTeacher", ev.dataTransfer.getData("teacher")); // Використовуйте getData для data-атрибутів
+        ev.dataTransfer.setData("fromSubject", ev.target.dataset.subject); // Виправлено: використовуємо dataset
+        ev.dataTransfer.setData("fromTeacher", ev.target.dataset.teacher);   // Виправлено: використовуємо dataset
     }
 
     function drop(ev, toDay, toGroup, toPair) {
@@ -448,7 +448,7 @@ html_code += """
         } else {
             dropTarget.appendChild(draggedElem);
         }
-
+        
         draggedElem.dataset.day = toDay;
         draggedElem.dataset.group = toGroup;
         draggedElem.dataset.pair = toPair;
@@ -461,7 +461,7 @@ html_code += """
             var subject = el.dataset.subject;
             var teacher = el.dataset.teacher;
             var id = el.id;
-            updatedSchedule[`<span class="math-inline">\{day\},</span>{group},${pair}`] = {
+            updatedSchedule[`${day},${group},${pair}`] = {
                 subject: subject,
                 teacher: teacher,
                 group: el.parentNode.previousElementSibling ? el.parentNode.previousElementSibling.innerText : 'Unknown Group',
@@ -478,21 +478,24 @@ component_value = components.html(html_code, height=800, scrolling=True, key="sc
 
 
 # Перевірка, чи повернув компонент словник.
-# Ця перевірка тепер більш надійна.
-if isinstance(component_value, dict):
+# Ця перевірка тепер більш надійна, щоб уникнути TypeError на перших рендерингах.
+if isinstance(component_value, dict) and component_value: # Перевіряємо, що це словник І що він не порожній
     new_schedule_data = {}
     for key_str, item in component_value.items():
         day_idx, group_idx, pair_idx = map(int, key_str.split(','))
         new_schedule_data[(day_idx, group_idx, pair_idx)] = item
-
+    
     if new_schedule_data != st.session_state.schedule_data:
         st.session_state.schedule_data = new_schedule_data
         save_schedule_to_db(db_conn, st.session_state.start_date, st.session_state.schedule_data)
-        # Після збереження не обов'язково викликати rerun, оскільки зміни вже відображені через JS
-        # Якщо ви хочете, щоб сторінка оновлювалася при кожній зміні, можете розкоментувати:
-        # st.experimental_rerun()
-elif component_value is not None: # Якщо компонент повернув щось, що не є None, але і не dict
-    st.warning(f"Неочікуваний тип даних від HTML-компонента: {type(component_value)}. Повинен бути 'dict'.")
+        # st.experimental_rerun() # Після збереження не обов'язково викликати rerun, оскільки зміни вже відображені через JS
+                                # Якщо ви хочете, щоб сторінка оновлювалася при кожній зміні, можете розкоментувати
+elif component_value is not None:
+    # Це відловлює випадки, коли component_value не є None, але і не dict
+    # Streamlit часто повертає DeltaGenerator, коли компонент ще не готовий
+    # або якщо сталася інша помилка у JavaScript.
+    # Просто ігноруємо, щоб уникнути TypeError та спаму попереджень.
+    pass
 
 
 def generate_pdf(schedule_data_pdf, start_date_pdf, end_date_pdf, pairs_pdf, days_pdf, group_names_pdf, num_groups_per_day_pdf):
