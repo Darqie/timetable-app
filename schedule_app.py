@@ -63,12 +63,12 @@ def save_schedule_to_db(conn, week_start_date, schedule_data):
         st.toast("Розклад збережено!")
     except Exception as e:
         st.error(f"Помилка при збереженні розкладу: {e}")
-        # Додаємо логіку очищення кешу та перезапуску при UndefinedTable
         if "UndefinedTable" in str(e):
             st.warning("Виявлено помилку UndefinedTable під час збереження. Спроба очистити кеш ресурсів і перезапустити.")
             st.cache_resource.clear()
-            st.experimental_rerun()
-
+            st.experimental_rerun() # Примусовий перезапуск після очищення кешу
+        # Важливо: якщо виникає інша помилка, не перезапускаємо бездумно
+        st.stop() # Зупиняємо виконання, щоб уникнути каскадних помилок, якщо проблема не вирішена
 
 def load_schedule_from_db(conn, week_start_date):
     """Завантажує дані розкладу для конкретного тижня з бази даних.
@@ -89,12 +89,13 @@ def load_schedule_from_db(conn, week_start_date):
         return None
     except Exception as e:
         st.error(f"Помилка при завантаженні розкладу: {e}")
-        # Додаємо логіку очищення кешу та перезапуску при UndefinedTable
         if "UndefinedTable" in str(e):
             st.warning("Виявлено помилку UndefinedTable під час завантаження. Спроба очистити кеш ресурсів і перезапустити.")
             st.cache_resource.clear()
-            st.experimental_rerun()
-        return None
+            st.experimental_rerun() # Примусовий перезапуск після очищення кешу
+        # Важливо: якщо виникає інша помилка, не перезапускаємо бездумно
+        st.stop() # Зупиняємо виконання, щоб уникнути каскадних помилок, якщо проблема не вирішена
+        return None # Повертаємо None у випадку помилки
 
 
 # Отримання з'єднання з базою даних. Тепер це включає ініціалізацію таблиці.
@@ -112,11 +113,13 @@ col_label, col_date_input, col_spacer_date, col_save_btn, col_download_btn, _ = 
 
 if 'start_date' not in st.session_state:
     st.session_state.start_date = date(2025, 6, 2) # Або date.today(), якщо хочете поточну дату як стартову
+    # Завантаження розкладу при першому запуску/оновленні сесії
     initial_load = load_schedule_from_db(db_conn, st.session_state.start_date)
     if initial_load:
         st.session_state.schedule_data = initial_load
     else:
-        st.session_state.schedule_data = {} # Буде заповнено стандартними даними нижче
+        # Якщо завантаження не вдалося або таблиця порожня, ініціалізуємо порожнім словником
+        st.session_state.schedule_data = {} 
 
 with col_label:
     st.markdown(
@@ -206,7 +209,9 @@ num_groups_per_day = 6
 group_names = [f"Група {i+1}" for i in range(num_groups_per_day)]
 
 # Ініціалізація або завантаження schedule_data
-if not st.session_state.get('schedule_data') or not st.session_state.schedule_data:
+# Цей блок повинен ініціалізувати st.session_state.schedule_data лише один раз,
+# або якщо дані для поточного тижня відсутні після спроби завантаження.
+if not st.session_state.get('schedule_data'): # Перевіряємо, чи існує ключ, а не чи він порожній
     initial_schedule_data = {}
     for i_day in range(len(days)):
         for i_group in range(num_groups_per_day):
@@ -219,7 +224,8 @@ if not st.session_state.get('schedule_data') or not st.session_state.schedule_da
                     "id": str(uuid.uuid4())
                 }
     st.session_state.schedule_data = initial_schedule_data
-    # Якщо дані завантажуються вперше, зберігаємо їх у БД
+    # Якщо дані завантажуються вперше і вони є початковими, зберігаємо їх у БД
+    # Цей save_schedule_to_db тут є важливою частиною ініціалізації.
     save_schedule_to_db(db_conn, st.session_state.start_date, st.session_state.schedule_data)
 
 # Отримуємо поточні дані розкладу для відображення
@@ -457,10 +463,13 @@ html_code += """
 </script>
 """
 
-component_value = components.html(html_code, height=800, scrolling=True)
+# ВАЖЛИВА ЗМІНА: Додано key="schedule_editor" до components.html
+# Це допоможе Streamlit розрізняти різні виклики компонента.
+component_value = components.html(html_code, height=800, scrolling=True, key="schedule_editor")
+
 
 # Перевірка, чи повернув компонент словник.
-# До першої взаємодії component_value може бути не словником.
+# Ця перевірка тепер більш надійна.
 if isinstance(component_value, dict):
     new_schedule_data = {}
     for key_str, item in component_value.items():
@@ -471,6 +480,9 @@ if isinstance(component_value, dict):
         st.session_state.schedule_data = new_schedule_data
         save_schedule_to_db(db_conn, st.session_state.start_date, st.session_state.schedule_data)
         st.experimental_rerun()
+elif component_value is not None:
+    # Це відловлює випадки, коли component_value не є None, але і не dict (наприклад, може бути пустим об'єктом Streamlit)
+    st.warning(f"Неочікуваний тип даних від HTML-компонента: {type(component_value)}. Повинен бути 'dict'.")
 
 
 def generate_pdf(schedule_data_pdf, start_date_pdf, end_date_pdf, pairs_pdf, days_pdf, group_names_pdf, num_groups_per_day_pdf):
