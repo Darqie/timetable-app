@@ -91,7 +91,7 @@ def load_schedule(week_start_date):
         st.warning(f"Розклад для тижня {week_start_date.strftime('%d.%m.%Y')} не знайдено в базі даних. Створюється шаблонний розклад.")
         # Якщо розкладу немає, генеруємо шаблонний
         for i_day in range(len(DAYS)):
-            for i_group in range(NUM_GROUPS_PER_DAY): # Виправлено
+            for i_group in range(NUM_GROUPS_PER_DAY): 
                 for i_pair in range(len(PAIRS)):
                     key = (i_day, i_group, i_pair)
                     loaded_data[key] = {
@@ -114,10 +114,9 @@ def get_all_saved_weeks():
 init_db()
 
 if 'start_date' not in st.session_state:
-    st.session_state.start_date = MONDAY_INITIAL_DATE # Початкова дата
+    st.session_state.start_date = MONDAY_INITIAL_DATE 
 
 if 'schedule_display_data' not in st.session_state:
-    # Завантажуємо розклад при першому запуску або якщо стан пустий
     st.session_state.schedule_display_data = load_schedule(st.session_state.start_date)
 
 # --- Функції для навігації по тижнях ---
@@ -127,7 +126,7 @@ def get_monday_of_week(target_date):
 
 def set_week_and_rerun(new_start_date):
     st.session_state.start_date = new_start_date
-    st.session_state.schedule_display_data = load_schedule(new_start_date) # Завантажуємо новий розклад при зміні тижня
+    st.session_state.schedule_display_data = load_schedule(new_start_date) 
     st.experimental_rerun()
 
 # --- UI Компоненти Streamlit ---
@@ -168,10 +167,8 @@ with col_spacer_date:
 
 with col_load_select:
     saved_weeks = get_all_saved_weeks()
-    # Форматування дат для відображення в селектбокс
     saved_weeks_formatted = {wk.strftime('%d.%m.%Y'): wk for wk in saved_weeks}
     
-    # Додаємо "Обрати збережений розклад" як перший елемент
     options = ["Обрати збережений розклад"] + list(saved_weeks_formatted.keys())
     
     selected_saved_week_str = st.selectbox("Завантажити:", options=options, key="load_week_selector")
@@ -202,210 +199,18 @@ with col_next_week:
 
 st.markdown("---")
 
-# --- Рендеринг таблиці розкладу з можливістю редагування ---
-# Цей блок був оновлений для коректної структури сітки
-st.markdown(
-    f"""
-<style>
-.schedule-grid-container {{
-    display: grid;
-    /* 120px для дня, 80px для групи, потім 5 колонок для пар */
-    grid-template-columns: 120px 80px repeat({len(PAIRS)}, 1fr);
-    gap: 1px;
-    font-family: 'Roboto', sans-serif;
-    border: 1px solid #C0D0E0;
-    border-radius: 12px;
-    overflow: hidden;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-    margin-top: 20px;
-    background-color: #F8F8F8;
-    max-width: 100%;
-    overflow-x: auto;
-}}
-.grid-cell {{
-    border: 1px solid #C0D0E0;
-    background: rgba(255, 255, 255, 0.7);
-    padding: 4px;
-    text-align: center;
-    box-sizing: border-box;
-    font-size: 10px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-}}
-.header-cell {{
-    font-weight: bold;
-    background: rgba(220, 230, 240, 0.8);
-}}
-.top-left-header {{
-    background: rgba(220, 230, 240, 0.8);
-    border-radius: 12px 0 0 0;
-    /* grid-column та grid-row для явного розміщення в сітці */
-    grid-column: 1 / 2; 
-    grid-row: 1 / 2;
-}}
-.group-header-title {{
-    background: rgba(220, 230, 240, 0.8);
-    border-radius: 0;
-    grid-column: 2 / 3;
-    grid-row: 1 / 2;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-weight: bold;
-}}
-.pair-header-cell {{
-    background: rgba(180, 210, 230, 0.8);
-    font-size: 16px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-}}
-.day-header-cell {{
-    background: rgba(240, 200, 100, 0.9);
-    font-size: 16px;
-    writing-mode: vertical-rl; /* Орієнтація тексту для заголовка дня */
-    text-orientation: mixed;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: bold;
-    border-left: 1px solid #C0D0E0;
-    grid-row: 2 / {2 + NUM_GROUPS_PER_DAY}; /* Розтягуємо на всі групи */
-}}
-.group-header-cell {{
-    background: rgba(200, 220, 240, 0.8);
-    font-size: 12px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-weight: bold;
-    border-top: 1px solid #C0D0E0;
-}}
-.stTextInput > div > div > input {{
-    text-align: center !important;
-    font-size: 9px !important;
-    padding: 2px !important;
-    margin: 0 !important;
-    border: 1px solid #ddd !important;
-    border-radius: 4px !important;
-    width: 95% !important;
-}}
-.stTextInput > label {{
-    display: none !important; /* Hide default Streamlit labels for compactness */
-}}
-</style>
-<div class="schedule-grid-container">
-    <div class="grid-cell top-left-header"></div>
-    <div class="grid-cell group-header-title">Група</div>
-"""
-, unsafe_allow_html=True
-)
-
-# Pair headers (розміщуємо їх явно в першому ряду)
-for i, (roman, time_range) in enumerate(PAIRS):
-    # grid-column починається з 3, бо перші дві колонки для дня та групи
-    st.markdown(f'''
-        <div class="grid-cell header-cell pair-header-cell" style="grid-column: {i + 3}; grid-row: 1;">
-            <div><strong>{roman} ПАРА</strong></div>
-            <div style="font-size: 13px; color: #333333; line-height: 1.2;">({time_range})</div>
-        </div>
-    ''', unsafe_allow_html=True)
-
-
-# Основні рядки з даними
-# Тепер генеруємо кожен "логічний" рядок (день + група + пари) як окремий набір Streamlit-колонок
-# для візуального розміщення.
-for i_day, day_name in enumerate(DAYS):
-    # Заголовок дня, який розтягується на всі групи цього дня
-    st.markdown(f'<div class="grid-cell day-header-cell" style="grid-column: {i_day + 3}; grid-row: 2 / {2 + NUM_GROUPS_PER_DAY};">{day_name}</div>', unsafe_allow_html=True)
-    # Змінено: заголовок дня виводиться один раз і займає всі групи,
-    # тому потрібно ретельно продумати структуру циклів.
-    # Фактично, ми спочатку виводимо всі заголовки (верхній, групи, пари, дні),
-    # а потім генеруємо поля вводу.
-
-    # Це складна частина: прямо інтегрувати st.text_input у HTML-сітку,
-    # що створена st.markdown, неможливо.
-    # Streamlit обробляє віджети послідовно.
-    # Для кожного дня, ми повинні створити рядки для груп.
-
-    # Ми повинні створити окремий "контейнер" для кожного дня,
-    # і в ньому будуть рядки для груп.
-    # Але Streamlit elements always flow vertically.
-
-    # Щоб Streamlit віджети (TextInput) виглядали як частина сітки,
-    # ми генеруємо HTML-структуру, а потім "заповнюємо" її віджетами.
-    # Однак Streamlit не дозволяє "заповнювати" HTML-діви віджетами напряму.
-    # Нам доведеться відмовитися від настільки жорсткого grid layout для TextInput
-    # або використовувати components.html з двостороннім зв'язком, що значно ускладнить код.
-
-    # Попередній підхід, де ми використовували st.columns(1)[0]
-    # був спробою "вбудувати" віджети в сітку, але він порушував візуальний grid.
-    #
-    # На жаль, Streamlit не надає прямого способу для цього.
-    #
-    # Давайте повернемося до концепції, де ми генеруємо таблицю
-    # за допомогою Streamlit columns, але будемо дуже обережні
-    # з розмірами і тим, як вони відображаються.
-    #
-    # HTML-код вище буде генерувати лише заголовки.
-    # Тепер, щоб отримати editable cells, ми повинні використовувати st.columns.
-    # Це означає, що візуально це буде не "одна" велика сітка,
-    # а ряд за рядом, де кожен "ряд" (наприклад, група на день)
-    # буде створений за допомогою st.columns.
-
-# Відміняємо попередній HTML-контейнер, оскільки ми не можемо ефективно вбудувати в нього
-# віджети Streamlit таким чином.
-# Замість цього, ми будемо будувати таблицю ряд за рядом, використовуючи st.columns.
-
-# Заголовки днів та груп (відміняємо попередній markdown для них і генеруємо їх прямо)
-# Це вже зроблено вище за допомогою st.markdown.
-
-# Тепер основна частина з полями вводу для розкладу.
-# Кожен "рядок" розкладу (одна група на один день) буде створюватися як окремий набір колонок.
-# Ми будемо використовувати st.columns, щоб імітувати структуру таблиці.
-
-st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True) # Додаємо невеликий відступ
-
-# Створимо CSS для стилів, які можуть бути перевизначені Streamlit.
-# Цей CSS буде застосовуватися до елементів, що генеруються Streamlit.
+# --- CSS для таблиці, що імітує сітку ---
+# Ці стилі будуть використовуватися для st.markdown елементів, що є "клітинками"
 st.markdown("""
 <style>
-/* Загальні стилі для контейнера таблиці, якщо ми не використовуємо єдиний grid */
-.schedule-table-container {
+.table-container {
     border: 1px solid #C0D0E0;
     border-radius: 12px;
     overflow: hidden;
     box-shadow: 0 4px 8px rgba(0,0,0,0.15);
     background-color: #F8F8F8;
+    margin-top: 20px;
 }
-
-/* Стилі для рядків та клітинок */
-.schedule-row {
-    display: flex; /* Використовуємо flexbox для рядків */
-    border-bottom: 1px solid #E0E0E0;
-}
-.schedule-row:last-child {
-    border-bottom: none;
-}
-.schedule-cell {
-    border-right: 1px solid #E0E0E0;
-    padding: 4px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    text-align: center;
-    box-sizing: border-box;
-    min-height: 60px; /* Мінімальна висота клітинки */
-}
-.schedule-cell:last-child {
-    border-right: none;
-}
-
-/* Заголовки */
 .header-cell-flex {
     font-weight: bold;
     text-align: center;
@@ -417,6 +222,15 @@ st.markdown("""
     color: #333333;
     background: rgba(220, 230, 240, 0.8);
     border-right: 1px solid #C0D0E0;
+    border-bottom: 1px solid #C0D0E0;
+    min-height: 60px; /* Мінімальна висота для заголовків */
+}
+.header-cell-flex:last-child {
+    border-right: none;
+}
+.pair-header-cell {
+    background: rgba(180, 210, 230, 0.8);
+    font-size: 16px;
 }
 .day-header-flex {
     background: rgba(240, 200, 100, 0.9);
@@ -428,12 +242,34 @@ st.markdown("""
     justify-content: center;
     font-weight: bold;
     border-right: 1px solid #C0D0E0;
+    border-bottom: 1px solid #C0D0E0;
     min-width: 120px; /* Ширина для заголовка дня */
 }
 .group-header-flex {
     background: rgba(200, 220, 240, 0.8);
     font-size: 12px;
     min-width: 80px; /* Ширина для заголовка групи */
+    border-right: 1px solid #C0D0E0;
+    border-bottom: 1px solid #C0D0E0;
+}
+.data-cell-flex {
+    background: rgba(255, 255, 255, 0.7);
+    padding: 4px;
+    border-right: 1px solid #C0D0E0;
+    border-bottom: 1px solid #C0D0E0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 60px; /* Мінімальна висота для полів вводу */
+}
+.data-cell-flex:last-child {
+    border-right: none;
+}
+/* Останній рядок не має нижньої межі */
+.data-row-last .data-cell-flex,
+.data-row-last .group-header-flex {
+    border-bottom: none;
 }
 
 /* Налаштування Streamlit TextInput для компактності */
@@ -445,6 +281,7 @@ st.markdown("""
     border: 1px solid #ddd !important;
     border-radius: 4px !important;
     width: 95% !important;
+    line-height: 1.2 !important; /* Для кращого відображення двох рядків тексту */
 }
 .stTextInput > label {
     display: none !important; /* Hide default Streamlit labels for compactness */
@@ -452,97 +289,99 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Загальний контейнер для таблиці, щоб застосувати рамку та тінь
+st.markdown("<div class='table-container'>", unsafe_allow_html=True)
 
-# Ручне створення верхніх заголовків (без використання grid-template-columns)
-# Це буде перший "рядок" таблиці
-header_cols = st.columns([120, 80] + [1 for _ in PAIRS])
+# --- Верхній ряд заголовків: Порожній кут, Заголовок "Група", Заголовки Пар ---
+# Визначаємо пропорції колонок для заголовків
+# 120px для заголовка дня, 80px для заголовка групи, потім 5 однакових частин для пар
+col_weights_header = [120, 80] + [1 for _ in PAIRS]
+header_cols = st.columns(col_weights_header)
+
 with header_cols[0]:
-    st.markdown("<div class='header-cell-flex top-left-header' style='min-width:120px; height: 100%;'></div>", unsafe_allow_html=True)
+    st.markdown("<div class='header-cell-flex' style='border-top-left-radius: 12px;'></div>", unsafe_allow_html=True) # Верхній лівий кут
 with header_cols[1]:
-    st.markdown("<div class='header-cell-flex group-header-flex' style='min-width:80px; height: 100%;'>Група</div>", unsafe_allow_html=True)
+    st.markdown("<div class='header-cell-flex group-header-flex'>Група</div>", unsafe_allow_html=True)
 for i, (roman, time_range) in enumerate(PAIRS):
-    with header_cols[i + 2]: # +2 для пропуску перших двох заголовків
+    with header_cols[i + 2]:
         st.markdown(f'''
-            <div class="header-cell-flex pair-header-cell" style="min-width: {st.session_state.get('col_width_pair', 100)}px; height: 100%;">
+            <div class="header-cell-flex pair-header-cell {'header-cell-flex-last' if i == len(PAIRS) - 1 else ''}" 
+                 style="{'border-top-right-radius: 12px;' if i == len(PAIRS) - 1 else ''}">
                 <div><strong>{roman} ПАРА</strong></div>
                 <div style="font-size: 13px; color: #333333; line-height: 1.2;">({time_range})</div>
             </div>
         ''', unsafe_allow_html=True)
 
-# Основні рядки таблиці
+
+# --- Основний вміст таблиці: Дні, Групи, Поля вводу ---
+# Для кожного дня створюємо окремий "ряд" Streamlit
 for i_day, day_name in enumerate(DAYS):
-    # Для кожного дня створюємо блок, який містить заголовок дня та всі групи
-    with st.container(border=True): # Можна використовувати st.container для візуального групування
-        st.markdown(f"<div class='day-header-flex' style='float:left; height: {NUM_GROUPS_PER_DAY * 60}px; margin-right: -1px; margin-top: 1px;'>{day_name}</div>", unsafe_allow_html=True)
-        # Костиль для розміщення заголовка дня
-        # Оскільки Streamlit відображає елементи вертикально,
-        # нам потрібно хитрити, щоб заголовок дня був зліва від груп.
-        # Float:left може допомогти, але він складний з Streamlit.
+    # Визначаємо чи це останній день, щоб прибрати нижні рамки
+    is_last_day = (i_day == len(DAYS) - 1)
+    day_row_class = "data-row-last" if is_last_day else ""
 
-        # Кращий підхід: знову використовувати st.columns для кожного рядка,
-        # включаючи заголовок дня як першу колонку, що розтягується.
+    # Для кожного дня, створюємо окремий "контейнер", щоб візуально згрупувати його
+    # Це буде ряд, що містить заголовок дня та всі групи під ним
+    # Ми імітуємо, що заголовок дня охоплює всі групи за допомогою висоти
+    # Це все ще буде "ряд" Streamlit, але перший елемент буде розтягнутий
 
-        # Видаляємо попередній st.markdown для day-header-cell
-        # і інтегруємо його в колонки для кожного дня.
+    # Для першого рядка групи в межах цього дня:
+    # Перша колонка буде заголовком дня, який розтягується на висоту всіх груп
+    # Наступна колонка - заголовок групи
+    # Далі 5 колонок для полів вводу пар
+    
+    # Визначаємо висоту для заголовка дня, щоб він розтягувався
+    day_header_height = NUM_GROUPS_PER_DAY * 60 # 60px - min-height data-cell-flex
 
+    # Головний ряд, що містить заголовок дня (як перший елемент)
+    # та віртуальний контейнер для груп, що розташовані поруч
+    main_cols_for_day = st.columns([120, 1000]) # 120px для дня, 1000 для решти (групи + пари)
+
+    with main_cols_for_day[0]: # Колонка для заголовка дня
+        st.markdown(f"""
+            <div class="day-header-flex {'data-row-last' if is_last_day else ''}" 
+                 style="min-height: {day_header_height}px; {'border-bottom-left-radius: 12px;' if is_last_day else ''}">
+                {day_name}
+            </div>
+        """, unsafe_allow_html=True)
+    
+    with main_cols_for_day[1]: # Колонка для груп та їх пар
+        # Тепер всередині цієї широкої колонки ми створюємо рядки для кожної групи
         for i_group in range(NUM_GROUPS_PER_DAY):
-            # Кожен ряд (день + група + пари)
-            # Розміри колонок: заголовок дня (якщо перший ряд групи), заголовок групи, потім пари
-            # day_col_width = 120, group_col_width = 80, pair_col_width = (ширина - 120 - 80) / 5
-            
-            # Для першої групи дня, перша колонка буде заголовком дня
-            # Для інших груп дня, перша колонка буде порожньою (зайнятою заголовком дня)
-            
-            if i_group == 0:
-                # Перший рядок для цього дня: включає заголовок дня
-                # Ми створюємо 1 (день) + 1 (група) + 5 (пар) колонок
-                cols = st.columns([120, 80] + [1 for _ in PAIRS])
-                with cols[0]:
-                    # Заголовок дня (розтягується на всі NUM_GROUPS_PER_DAY рядків)
-                    st.markdown(f"""
-                        <div class="schedule-cell day-header-flex" style="min-height: {NUM_GROUPS_PER_DAY * 60}px;">
-                            {day_name}
-                        </div>
-                    """, unsafe_allow_html=True)
-                with cols[1]:
-                    st.markdown(f"<div class='schedule-cell group-header-flex'>{GROUP_NAMES[i_group]}</div>", unsafe_allow_html=True)
-                for i_pair in range(len(PAIRS)):
-                    with cols[i_pair + 2]:
-                        current_item = st.session_state.schedule_display_data.get((i_day, i_group, i_pair), {
-                            "teacher": "", "subject": "", "id": str(uuid.uuid4())
-                        })
-                        st.session_state.schedule_display_data[(i_day, i_group, i_pair)]['subject'] = st.text_input(
-                            label="Предмет", value=current_item["subject"],
-                            key=f"subject_{st.session_state.start_date.isoformat()}_{i_day}_{i_group}_{i_pair}", placeholder="Предмет"
-                        )
-                        st.session_state.schedule_display_data[(i_day, i_group, i_pair)]['teacher'] = st.text_input(
-                            label="Викладач", value=current_item["teacher"],
-                            key=f"teacher_{st.session_state.start_date.isoformat()}_{i_day}_{i_group}_{i_pair}", placeholder="Викладач"
-                        )
-            else:
-                # Наступні рядки для цього дня: тільки заголовок групи та пари
-                # Ми створюємо 1 (порожня, для відповідності заголовку дня) + 1 (група) + 5 (пар) колонок
-                cols = st.columns([120, 80] + [1 for _ in PAIRS])
-                with cols[0]:
-                    # Ця колонка "пуста" і візуально зайнята заголовком дня з попереднього рядка
-                    st.markdown(f"<div class='schedule-cell' style='min-height: 60px; border:none;'></div>", unsafe_allow_html=True)
-                with cols[1]:
-                    st.markdown(f"<div class='schedule-cell group-header-flex'>{GROUP_NAMES[i_group]}</div>", unsafe_allow_html=True)
-                for i_pair in range(len(PAIRS)):
-                    with cols[i_pair + 2]:
-                        current_item = st.session_state.schedule_display_data.get((i_day, i_group, i_pair), {
-                            "teacher": "", "subject": "", "id": str(uuid.uuid4())
-                        })
-                        st.session_state.schedule_display_data[(i_day, i_group, i_pair)]['subject'] = st.text_input(
-                            label="Предмет", value=current_item["subject"],
-                            key=f"subject_{st.session_state.start_date.isoformat()}_{i_day}_{i_group}_{i_pair}", placeholder="Предмет"
-                        )
-                        st.session_state.schedule_display_data[(i_day, i_group, i_pair)]['teacher'] = st.text_input(
-                            label="Викладач", value=current_item["teacher"],
-                            key=f"teacher_{st.session_state.start_date.isoformat()}_{i_day}_{i_group}_{i_pair}", placeholder="Викладач"
-                        )
-    st.markdown("<div style='clear:both;'></div>", unsafe_allow_html=True) # Очищаємо float
+            is_last_group_in_day = (i_group == NUM_GROUPS_PER_DAY - 1)
+            group_row_class = "data-row-last" if is_last_day and is_last_group_in_day else ""
 
+            # Створюємо колонки для заголовка групи та 5 пар
+            group_cols = st.columns([80] + [1 for _ in PAIRS])
+
+            with group_cols[0]: # Колонка для заголовка групи
+                st.markdown(f"<div class='data-cell-flex group-header-flex {group_row_class}'>{GROUP_NAMES[i_group]}</div>", unsafe_allow_html=True)
+            
+            for i_pair in range(len(PAIRS)):
+                with group_cols[i_pair + 1]: # Колонка для полів вводу пари
+                    current_item = st.session_state.schedule_display_data.get((i_day, i_group, i_pair), {
+                        "teacher": "", "subject": "", "id": str(uuid.uuid4())
+                    })
+                    # Використовуємо st.container для візуального групування input полів та застосування стилів клітинки
+                    st.markdown(f"<div class='data-cell-flex {group_row_class} {'data-cell-flex-last' if i_pair == len(PAIRS) - 1 else ''}'>", unsafe_allow_html=True)
+                    
+                    st.session_state.schedule_display_data[(i_day, i_group, i_pair)]['subject'] = st.text_input(
+                        label="Предмет", 
+                        value=current_item["subject"],
+                        key=f"subject_{st.session_state.start_date.isoformat()}_{i_day}_{i_group}_{i_pair}", 
+                        placeholder="Предмет"
+                    )
+                    st.session_state.schedule_display_data[(i_day, i_group, i_pair)]['teacher'] = st.text_input(
+                        label="Викладач", 
+                        value=current_item["teacher"],
+                        key=f"teacher_{st.session_state.start_date.isoformat()}_{i_day}_{i_group}_{i_pair}", 
+                        placeholder="Викладач"
+                    )
+                    st.markdown("</div>", unsafe_allow_html=True) # Закриваємо data-cell-flex
+
+
+# Закриття основного div контейнера для таблиці
+st.markdown("</div>", unsafe_allow_html=True) 
 
 # --- Кнопки збереження та завантаження ---
 with col_save_btn:
