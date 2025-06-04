@@ -2,14 +2,12 @@ import streamlit as st
 import streamlit.components.v1 as components
 import uuid
 
-st.set_page_config(page_title="Розклад уроків", layout="wide")
-
-st.markdown("<h2 style='text-align: center;'>Розклад уроків</h2>", unsafe_allow_html=True)
+st.set_page_config(page_title="Розклад пар", layout="wide")
+st.markdown("<h2 style='text-align: center;'>Розклад пар</h2>", unsafe_allow_html=True)
 
 days = ["Понеділок", "Вівторок", "Середа", "Четвер", "П’ятниця"]
-lessons = [f"Урок {i}" for i in range(1, 6)]
+pairs = [f"Пара {i}" for i in range(1, 6)]
 
-# Статичні приклади даних (для заповнення таблиці)
 schedule_data = {}
 for i in range(5):
     for j in range(5):
@@ -20,7 +18,6 @@ for i in range(5):
             "id": str(uuid.uuid4())
         }
 
-# HTML з CSS і JavaScript
 html_code = """
 <style>
 .timetable {
@@ -61,9 +58,9 @@ html_code = """
 for day in days:
     html_code += f'<div class="cell cell-header">{day}</div>'
 
-# Рядки з уроками
-for i, lesson in enumerate(lessons):
-    html_code += f'<div class="cell cell-header">{lesson}</div>'
+# Пари
+for i, pair in enumerate(pairs):
+    html_code += f'<div class="cell cell-header">{pair}</div>'
     for j, day in enumerate(days):
         item = schedule_data[(i, j)]
         html_code += f'''
@@ -76,29 +73,43 @@ for i, lesson in enumerate(lessons):
         </div>
         '''
 
-html_code += "</div>"
-
-# JavaScript
 html_code += """
+</div>
+
 <script>
 function allowDrop(ev) {
   ev.preventDefault();
 }
+
 function drag(ev) {
-  ev.dataTransfer.setData("text", ev.target.id);
+  ev.dataTransfer.setData("text/plain", ev.target.id);
 }
+
 function drop(ev) {
   ev.preventDefault();
-  var data = ev.dataTransfer.getData("text");
-  var element = document.getElementById(data);
-  if (ev.target.classList.contains("cell")) {
-    ev.target.appendChild(element);
-  } else if (ev.target.classList.contains("draggable")) {
-    ev.target.parentNode.appendChild(element);
+  var draggedId = ev.dataTransfer.getData("text");
+  var draggedElem = document.getElementById(draggedId);
+
+  var dropTarget = ev.target;
+
+  // Знайти найближчий .cell, якщо клікнули не на саму клітинку
+  while (!dropTarget.classList.contains("cell")) {
+    dropTarget = dropTarget.parentNode;
+    if (!dropTarget) return;
+  }
+
+  // Якщо в цільовій клітинці вже є елемент — поміняти місцями
+  var existing = dropTarget.querySelector(".draggable");
+  var parentOfDragged = draggedElem.parentNode;
+
+  if (existing) {
+    dropTarget.appendChild(draggedElem);
+    parentOfDragged.appendChild(existing);
+  } else {
+    dropTarget.appendChild(draggedElem);
   }
 }
 </script>
 """
 
-# Вивід у Streamlit
 components.html(html_code, height=800, scrolling=True)
