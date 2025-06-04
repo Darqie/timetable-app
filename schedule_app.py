@@ -15,12 +15,16 @@ st.markdown("---") # Розділювач для візуального відо
 
 # Використовуємо st.columns для розміщення елементів в одному рядку з більш компактними пропорціями
 # Розподіл: 18% для вибору дати, 10% для зберегти, 14% для завантажити, 58% порожнього простору
-col_date_picker, col_save_btn, col_download_btn, _ = st.columns([0.18, 0.1, 0.14, 0.58])
+# Оновлений розподіл для окремого розміщення лейблу та поля вибору дати
+col_date_label, col_date_input, col_save_btn, col_download_btn, _ = st.columns([0.13, 0.15, 0.1, 0.14, 0.48]) # Змінено пропорції
 
-with col_date_picker:
+with col_date_label:
+    st.markdown("<p style='text-align: left; margin-top: 25px;'>**Виберіть початок тижня:**</p>", unsafe_allow_html=True)
+
+with col_date_input:
     # Вибір початку тижня - тепер на самому верху як опція
     # Ця змінна `start_date` буде глобально доступною після виконання цього рядка.
-    start_date = st.date_input("Виберіть початок тижня:", date(2025, 6, 2), key="start_date_picker")
+    start_date = st.date_input("", date(2025, 6, 2), key="start_date_picker", help="Виберіть перший день тижня (понеділок)") # Пустий лейбл, оскільки він тепер окремо
 
 # Оскільки start_date тепер визначено в Streamlit UI, end_date може бути обчислено одразу.
 # Це вирішує потенційний NameError.
