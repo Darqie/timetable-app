@@ -195,33 +195,33 @@ html_code += """
 </div>
 
 <script>
-function allowDrop(ev) {
+function allowDrop(ev) {{
   ev.preventDefault();
-}
-function drag(ev) {
+}}
+function drag(ev) {{
   ev.dataTransfer.setData("text", ev.target.id);
-}
-function drop(ev) {
+}}
+function drop(ev) {{
   ev.preventDefault();
   var draggedId = ev.dataTransfer.getData("text");
   var draggedElem = document.getElementById(draggedId);
 
   var dropTarget = ev.target;
-  while (!dropTarget.classList.contains("cell") || dropTarget.classList.contains("cell-header")) {
+  while (!dropTarget.classList.contains("cell") || dropTarget.classList.contains("cell-header")) {{
     dropTarget = dropTarget.parentNode;
     if (!dropTarget) return; 
-  }
+  }}
 
   var existing = dropTarget.querySelector(".draggable");
   var parentOfDragged = draggedElem.parentNode;
 
-  if (existing) {
+  if (existing) {{
     dropTarget.appendChild(draggedElem);
     parentOfDragged.appendChild(existing);
-  } else {
+  }} else {{
     dropTarget.appendChild(draggedElem);
-  }
-}
+  }}
+}}
 </script>
 """
 
