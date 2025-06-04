@@ -5,80 +5,21 @@ from datetime import date, timedelta
 from fpdf import FPDF
 import os
 
-# --- Налаштування Streamlit ---
 st.set_page_config(page_title="Розклад пар", layout="wide")
 
-# --- Константы ---
-# MONDAY_INITIAL_DATE = date(2025, 6, 2) # Понеділок для початкової дати - можна залишити або прибрати, якщо не потрібна конкретна дата
-MONDAY_INITIAL_DATE = date.today() - timedelta(days=date.today().weekday()) # Поточний понеділок
-
-PAIRS = [
-    ("I", "8:30 – 9:50"),
-    ("II", "10:00 – 11:20"),
-    ("III", "11:35 – 12:55"),
-    ("IV", "13:15 – 14:35"),
-    ("V", "14:45 – 16:05"),
-]
-
-DAYS = ["Понеділок", "Вівторок", "Середа", "Четвер", "П’ятниця"]
-NUM_GROUPS_PER_DAY = 6 
-
-GROUP_NAMES = [f"Група {i+1}" for i in range(NUM_GROUPS_PER_DAY)]
-
-# --- Функції для завантаження/збереження даних (тепер лише в st.session_state) ---
-
-# Функції, що раніше працювали з БД, тепер не потрібні.
-# Дані завантажуються/зберігаються безпосередньо в st.session_state.schedule_display_data.
-
-def initialize_schedule_data(current_start_date):
-    """
-    Ініціалізує або скидає дані розкладу для нової сесії/тижня.
-    Дані зберігаються у st.session_state.
-    """
-    # Генеруємо шаблонний розклад при кожній ініціалізації/зміні тижня
-    # Якщо ви хочете, щоб розклад "очищався" при переході на новий тиждень, 
-    # це є природною поведінкою без постійного зберігання.
-    new_data = {}
-    for i_day in range(len(DAYS)):
-        for i_group in range(NUM_GROUPS_PER_DAY): 
-            for i_pair in range(len(PAIRS)):
-                key = (i_day, i_group, i_pair)
-                new_data[key] = {
-                    "teacher": f"Вч.Д{i_day+1}.Г{i_group+1}.П{i_pair+1}",
-                    "group": GROUP_NAMES[i_group],
-                    "subject": f"Предмет {i_pair+1}-{i_group+1}",
-                    "id": str(uuid.uuid4()) # Унікальний ID для key Streamlit віджетів
-                }
-    return new_data
-
-# --- Ініціалізація стану сесії ---
-if 'start_date' not in st.session_state:
-    st.session_state.start_date = MONDAY_INITIAL_DATE 
-
-if 'schedule_display_data' not in st.session_state:
-    st.session_state.schedule_display_data = initialize_schedule_data(st.session_state.start_date)
-
-# --- Функції для навігації по тижнях ---
-def get_monday_of_week(target_date):
-    days_since_monday = target_date.weekday()
-    return target_date - timedelta(days=days_since_monday)
-
-def set_week_and_rerun(new_start_date):
-    st.session_state.start_date = new_start_date
-    # При зміні тижня, генеруємо новий (порожній або шаблонний) розклад
-    # Якщо ви хочете, щоб дані "зберігалися" при навігації, 
-    # вам доведеться реалізувати якийсь механізм (наприклад, JSON-файли для кожного тижня), 
-    # але це не база даних.
-    st.session_state.schedule_display_data = initialize_schedule_data(new_start_date) 
-    st.experimental_rerun()
-
-# --- UI Компоненти Streamlit ---
+# Розміщення назви "Розклад пар" по центру
 st.markdown("<h2 style='text-align: center; margin-bottom: 10px;'>Розклад пар</h2>", unsafe_allow_html=True)
-st.markdown("---")
 
-# ----- Блок Опцій: Вибір тижня -----
-# Тепер без "Зберегти" та "Завантажити" з бази даних
-col_label, col_date_input, col_spacer_date, col_placeholder_load_select = st.columns([0.13, 0.15, 0.03, 0.69])
+st.markdown("---") # Розділювач
+
+# ----- Блок Опцій: Вибір тижня, Зберегти, Завантажити -----
+
+# Використовуємо st.columns для розміщення елементів в одному рядку.
+col_label, col_date_input, col_spacer_date, col_save_btn, col_download_btn, _ = st.columns([0.13, 0.15, 0.03, 0.1, 0.14, 0.45])
+
+# Ініціалізація session_state для start_date, якщо він ще не встановлений
+if 'start_date' not in st.session_state:
+    st.session_state.start_date = date(2025, 6, 2) # Або date.today(), якщо хочете поточну дату як стартову
 
 with col_label:
     st.markdown(
@@ -102,227 +43,254 @@ with col_label:
     )
 
 with col_date_input:
-    selected_date_manual = st.date_input("", st.session_state.start_date, key="manual_date_picker")
-    if selected_date_manual != st.session_state.start_date:
-        set_week_and_rerun(selected_date_manual)
+    selected_date = st.date_input("", st.session_state.start_date, key="manual_date_picker")
+    # Оновлюємо session_state, якщо користувач змінив дату вручну
+    if selected_date != st.session_state.start_date:
+        st.session_state.start_date = selected_date
+        st.experimental_rerun() # Перезапустити, щоб відобразити зміни
 
 with col_spacer_date:
-    st.write("")
+    st.write("") # Порожній спейсер
 
-# Пусте місце замість селектора завантаження з БД та кнопок збереження/завантаження
-with col_placeholder_load_select:
-    st.write("") 
-
+# Тепер end_date залежить від st.session_state.start_date
 end_date = st.session_state.start_date + timedelta(days=4)
 
+# Відображення тижня по центру
 st.markdown(f"<h3 style='text-align: center; margin-top: 5px; margin-bottom: 5px;'>📆 {st.session_state.start_date.strftime('%d.%m.%Y')} – {end_date.strftime('%d.%m.%Y')}</h3>", unsafe_allow_html=True)
 
-# ----- Блок кнопок навігації по тижнях -----
-spacer_left, col_prev_week, col_current_week, col_next_week, spacer_right = st.columns([1, 0.25, 0.25, 0.25, 1])
+# ----- Блок вибору тижнів: Минулий, Поточний, Майбутній -----
+# Вирівнюємо кнопки по центру, використовуючи порожні колонки
+spacer_left, col_prev_week, col_current_week, col_next_week, spacer_right = st.columns([1, 0.25, 0.25, 0.25, 1]) # Пропорції для центрування
+
+# Функція для встановлення початку тижня (понеділок)
+def get_monday_of_week(target_date):
+    # weekday() повертає 0 для понеділка, 6 для неділі
+    days_since_monday = target_date.weekday()
+    return target_date - timedelta(days=days_since_monday)
 
 with col_prev_week:
     if st.button("⏪ Минулий тиждень", key="prev_week_btn"):
-        set_week_and_rerun(get_monday_of_week(st.session_state.start_date - timedelta(weeks=1)))
+        st.session_state.start_date = get_monday_of_week(st.session_state.start_date - timedelta(weeks=1))
+        st.experimental_rerun()
 
 with col_current_week:
     if st.button("🗓️ Поточний тиждень", key="current_week_btn"):
-        set_week_and_rerun(get_monday_of_week(date.today()))
+        st.session_state.start_date = get_monday_of_week(date.today()) # Завжди повертаємося до понеділка поточного тижня
+        st.experimental_rerun()
 
 with col_next_week:
     if st.button("⏩ Майбутній тиждень", key="next_week_btn"):
-        set_week_and_rerun(get_monday_of_week(st.session_state.start_date + timedelta(weeks=1)))
+        st.session_state.start_date = get_monday_of_week(st.session_state.start_date + timedelta(weeks=1))
+        st.experimental_rerun()
 
-st.markdown("---")
+st.markdown("---") # Розділювач
+# ----- Кінець Блоку Опцій -----
 
-# --- CSS для імітації таблиці за допомогою Streamlit columns ---
-# Цей CSS буде застосовуватися до st.markdown елементів, що є "клітинками"
-st.markdown("""
+pairs = [
+    ("I", "8:30 – 9:50"),
+    ("II", "10:00 – 11:20"),
+    ("III", "11:35 – 12:55"),
+    ("IV", "13:15 – 14:35"),
+    ("V", "14:45 – 16:05"),
+]
+
+days = ["Понеділок", "Вівторок", "Середа", "Четвер", "П’ятниця"]
+num_groups_per_day = 6
+
+group_names = [f"Група {i+1}" for i in range(num_groups_per_day)]
+
+schedule_data = {}
+for i_day in range(len(days)):
+    for i_group in range(num_groups_per_day):
+        for i_pair in range(len(pairs)):
+            key = (i_day, i_group, i_pair)
+            schedule_data[key] = {
+                "teacher": f"Вч.{chr(65 + i_day)}.{i_group+1}.{i_pair+1}",
+                "group": group_names[i_group],
+                "subject": f"Предм.{i_pair+1}-{i_group+1}",
+                "id": str(uuid.uuid4())
+            }
+
+html_code = f"""
 <style>
-/* Загальний контейнер для таблиці */
-.table-container {
-    border: 1px solid #C0D0E0;
+:root {{
+    --main-bg-color: #F8F8F8;
+    --header-bg-top-left: rgba(220, 230, 240, 0.8);
+    --header-bg-pair: rgba(180, 210, 230, 0.8);
+    --header-bg-group: rgba(200, 220, 240, 0.8);
+    --header-bg-day: rgba(240, 200, 100, 0.9);
+    --cell-bg: rgba(255, 255, 255, 0.7);
+    --border-color: #C0D0E0;
+    --draggable-bg: rgba(255, 240, 180, 0.8);
+    --text-color: #333333;
+    --shadow-light: 0 2px 5px rgba(0,0,0,0.1);
+    --shadow-medium: 0 4px 8px rgba(0,0,0,0.15);
+}}
+
+body {{ background-color: var(--main-bg-color); }}
+
+.timetable {{
+    display: grid;
+    grid-template-columns: 120px 80px repeat({len(pairs)}, 1fr);
+    grid-auto-rows: minmax(55px, auto);
+    gap: 1px;
+    font-family: 'Roboto', sans-serif;
+    border: 1px solid var(--border-color);
     border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-    background-color: #F8F8F8;
+    box-shadow: var(--shadow-medium);
     margin-top: 20px;
-}
-/* Стилі для всіх "клітинок" заголовків та даних */
-.cell-style {
+    background-color: var(--main-bg-color);
+    max-width: 100%;
+    overflow-x: auto;
+}}
+
+.cell {{
+    border: 1px solid var(--border-color);
+    background: var(--cell-bg);
+    position: relative;
+    padding: 4px;
+    overflow: hidden;
+    color: var(--text-color);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    box-sizing: border-box;
+    font-size: 10px;
+}}
+.cell-header {{
+    font-weight: bold;
+    text-align: center;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 4px;
-    box-sizing: border-box;
-    min-height: 60px; /* Стандартна висота для комірок */
-    border-right: 1px solid #E0E0E0;
-    border-bottom: 1px solid #E0E0E0;
-    text-align: center;
-    overflow: hidden; /* Обрізати вміст, якщо він занадто великий */
-}
-/* Заголовки верхнього ряду */
-.header-cell-top {
-    background: rgba(220, 230, 240, 0.8);
-    font-weight: bold;
-}
-/* Заголовки пар */
-.pair-header-cell {
-    background: rgba(180, 210, 230, 0.8);
+    padding: 6px;
+    color: var(--text-color);
+    box-shadow: var(--shadow-light);
+}}
+.top-left-corner {{
+    background: var(--header-bg-top-left);
+    border-radius: 12px 0 0 0;
+}}
+.pair-header {{
+    background: var(--header-bg-pair);
     font-size: 16px;
-}
-/* Заголовки днів */
-.day-header-cell {
-    background: rgba(240, 200, 100, 0.9);
+    border-radius: 0;
+}}
+.day-header-main {{
+    background: var(--header-bg-day);
     font-size: 16px;
-    writing-mode: vertical-rl;
-    text-orientation: mixed;
+    grid-row: span {num_groups_per_day};
+    border-radius: 0;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+}}
+.day-header-text {{
+    transform: rotate(-90deg);
+    white-space: nowrap;
+    transform-origin: center center;
     font-weight: bold;
-    min-width: 120px; /* Фіксована ширина для колонки дня */
-}
-/* Заголовки груп */
-.group-header-cell {
-    background: rgba(200, 220, 240, 0.8);
+}}
+.group-sub-header {{
+    background: var(--header-bg-group);
     font-size: 12px;
-    min-width: 80px; /* Фіксована ширина для колонки групи */
-}
-
-/* Прибираємо праву межу для останньої колонки в кожному логічному рядку */
-.no-right-border {
-    border-right: none !important;
-}
-/* Прибираємо нижню межу для останнього логічного дня (всіх його клітинок) */
-.no-bottom-border {
-    border-bottom: none !important;
-}
-
-/* Налаштування Streamlit TextInput для компактності */
-.stTextInput > div > div > input {
-    text-align: center !important;
-    font-size: 9px !important;
-    padding: 2px !important;
-    margin: 0 !important;
-    border: 1px solid #ddd !important;
-    border-radius: 4px !important;
-    width: 95% !important;
-    line-height: 1.2 !important; /* Для кращого відображення двох рядків тексту */
-}
-.stTextInput > label {
-    display: none !important; /* Hide default Streamlit labels for compactness */
-}
-/* Щоб прибрати стандартні відступи Streamlit навколо колонок */
-div[data-testid="column"] {
-    padding: 0px !important;
-    margin: 0px !important;
-    display: flex; /* Важливо для вирівнювання вмісту всередині колонки */
-    flex-direction: column;
-    justify-content: flex-start;
-    align-items: stretch;
-}
+    padding: 5px;
+    border-radius: 0;
+}}
+.draggable {{
+    background: var(--draggable-bg);
+    border-radius: 6px;
+    padding: 4px;
+    cursor: grab;
+    box-shadow: 1px 1px 3px rgba(0,0,0,0.15);
+    width: 95%;
+    font-size: 9px;
+    line-height: 1.2;
+    transition: transform 0.1s ease-in-out;
+}}
+.draggable:active {{
+    transform: scale(1.03);
+}}
+.time-block {{
+    font-size: 13px;
+    color: var(--text-color);
+    line-height: 1.2;
+}}
 </style>
-""", unsafe_allow_html=True)
 
-st.markdown("<div class='table-container'>", unsafe_allow_html=True)
+<div class="timetable">
+    <div class="cell cell-header top-left-corner"></div>
+    <div class="cell cell-header top-left-corner">Група</div>
+"""
 
-# --- Верхній ряд заголовків: Порожній кут, Заголовок "Група", Заголовки Пар ---
-col_weights_header = [120, 80] + [1 for _ in PAIRS]
-header_cols = st.columns(col_weights_header)
+for roman, time_range in pairs:
+    html_code += f'''
+        <div class="cell cell-header pair-header">
+            <div><strong>{roman} ПАРА</strong></div>
+            <div class="time-block">({time_range})</div>
+        </div>
+    '''
 
-with header_cols[0]:
-    st.markdown("<div class='cell-style header-cell-top' style='border-top-left-radius: 12px;'></div>", unsafe_allow_html=True)
-with header_cols[1]:
-    st.markdown("<div class='cell-style header-cell-top group-header-cell'>Група</div>", unsafe_allow_html=True)
-for i, (roman, time_range) in enumerate(PAIRS):
-    with header_cols[i + 2]:
-        right_border_class = "no-right-border" if i == len(PAIRS) - 1 else ""
-        border_radius_style = "border-top-right-radius: 12px;" if i == len(PAIRS) - 1 else ""
-        st.markdown(f'''
-            <div class="cell-style header-cell-top pair-header-cell {right_border_class}" style="{border_radius_style}">
-                <div><strong>{roman} ПАРА</strong></div>
-                <div style="font-size: 13px; color: #333333; line-height: 1.2;">({time_range})</div>
+for i_day, day_name in enumerate(days):
+    html_code += f'<div class="cell cell-header day-header-main"><span class="day-header-text">{day_name}</span></div>'
+
+    for i_group in range(num_groups_per_day):
+        html_code += f'<div class="cell group-sub-header">{group_names[i_group]}</div>'
+
+        for i_pair in range(len(pairs)):
+            item = schedule_data[(i_day, i_group, i_pair)]
+            html_code += f'''
+            <div class="cell" ondrop="drop(event)" ondragover="allowDrop(event)">
+                <div id="{item['id']}" class="draggable" draggable="true" ondragstart="drag(event)">
+                    <strong>{item["subject"]}</strong><br>
+                    {item["teacher"]}
+                </div>
             </div>
-        ''', unsafe_allow_html=True)
+            '''
 
-# --- Основний вміст таблиці: Дні, Групи, Поля вводу ---
-for i_day, day_name in enumerate(DAYS):
-    is_last_day = (i_day == len(DAYS) - 1)
-    day_header_height = NUM_GROUPS_PER_DAY * 60
+html_code += """
+</div>
 
-    day_main_cols = st.columns([120, 80 + len(PAIRS)]) 
+<script>
+function allowDrop(ev) {{
+    ev.preventDefault();
+}}
+function drag(ev) {{
+    ev.dataTransfer.setData("text", ev.target.id);
+}}
+function drop(ev) {{
+    ev.preventDefault();
+    var draggedId = ev.dataTransfer.getData("text");
+    var draggedElem = document.getElementById(draggedId);
 
-    with day_main_cols[0]:
-        bottom_border_class = "no-bottom-border" if is_last_day else ""
-        border_radius_style = "border-bottom-left-radius: 12px;" if is_last_day else ""
-        st.markdown(f"""
-            <div class="cell-style day-header-cell {bottom_border_class}" style="min-height: {day_header_height}px; {border_radius_style}">
-                {day_name}
-            </div>
-        """, unsafe_allow_html=True)
+    var dropTarget = ev.target;
+    while (!dropTarget.classList.contains("cell") || dropTarget.classList.contains("cell-header")) {{
+        dropTarget = dropTarget.parentNode;
+        if (!dropTarget) return;
+    }}
 
-    with day_main_cols[1]:
-        for i_group in range(NUM_GROUPS_PER_DAY):
-            is_last_row_overall = is_last_day and (i_group == NUM_GROUPS_PER_DAY - 1)
-            bottom_border_class_for_data = "no-bottom-border" if is_last_row_overall else ""
+    var existing = dropTarget.querySelector(".draggable");
+    var parentOfDragged = draggedElem.parentNode;
 
-            group_and_pairs_cols = st.columns([80] + [1 for _ in PAIRS])
+    if (existing) {{
+        dropTarget.appendChild(draggedElem);
+        parentOfDragged.appendChild(existing);
+    }} else {{
+        dropTarget.appendChild(draggedElem);
+    }}
+}}
+</script>
+"""
 
-            with group_and_pairs_cols[0]:
-                st.markdown(f"<div class='cell-style group-header-cell {bottom_border_class_for_data}'>{GROUP_NAMES[i_group]}</div>", unsafe_allow_html=True)
-            
-            for i_pair in range(len(PAIRS)):
-                with group_and_pairs_cols[i_pair + 1]:
-                    right_border_class = "no-right-border" if i_pair == len(PAIRS) - 1 else ""
-                    
-                    current_item = st.session_state.schedule_display_data.get((i_day, i_group, i_pair), {
-                        "teacher": "", "subject": "", "id": str(uuid.uuid4())
-                    })
-                    
-                    st.markdown(f"<div class='cell-style {right_border_class} {bottom_border_class_for_data}'>", unsafe_allow_html=True)
-                    st.session_state.schedule_display_data[(i_day, i_group, i_pair)]['subject'] = st.text_input(
-                        label="Предмет", 
-                        value=current_item["subject"],
-                        key=f"subject_{st.session_state.start_date.isoformat()}_{i_day}_{i_group}_{i_pair}", 
-                        placeholder="Предмет"
-                    )
-                    st.session_state.schedule_display_data[(i_day, i_group, i_pair)]['teacher'] = st.text_input(
-                        label="Викладач", 
-                        value=current_item["teacher"],
-                        key=f"teacher_{st.session_state.start_date.isoformat()}_{i_day}_{i_group}_{i_pair}", 
-                        placeholder="Викладач"
-                    )
-                    st.markdown("</div>", unsafe_allow_html=True)
+components.html(html_code, height=800, scrolling=True)
 
-st.markdown("</div>", unsafe_allow_html=True) # Закриття table-container
-
-
-# --- Кнопки для PDF ---
-# Кнопки "Зберегти" немає, оскільки немає постійного зберігання.
-# Залишимо лише кнопку "Завантажити PDF".
-
-# Назва файлу PDF з вибраним тижнем
-pdf_file_name = f"розклад_{st.session_state.start_date.strftime('%d.%m')}–{end_date.strftime('%d.%m')}.pdf"
-
-st.markdown("<hr>", unsafe_allow_html=True) # Роздільник для кнопок
-
-# Розміщення кнопки "Завантажити PDF"
-col_spacer_left, col_download_pdf, col_spacer_right = st.columns([1, 0.2, 1])
-
-with col_download_pdf:
-    pdf_bytes = generate_pdf(st.session_state.schedule_display_data, st.session_state.start_date, end_date, PAIRS, DAYS, GROUP_NAMES, NUM_GROUPS_PER_DAY)
-
-    if pdf_bytes:
-        st.download_button(
-            label="⬇️ Завантажити PDF",
-            data=pdf_bytes,
-            file_name=pdf_file_name,
-            mime="application/pdf",
-            key="download_button"
-        )
-    else:
-        st.warning("Не вдалося згенерувати PDF-файл.")
-
-# PDF Generation Function (unchanged, just ensure it uses correct data)
-def generate_pdf(schedule_data_for_pdf, start_date_pdf, end_date_pdf, pairs_pdf, days_pdf, group_names_pdf, num_groups_per_day_pdf):
+def generate_pdf(schedule_data, start_date_pdf, end_date_pdf, pairs_pdf, days_pdf, group_names_pdf, num_groups_per_day_pdf):
     pdf = FPDF(orientation='L', unit='mm', format='A4')
     pdf.add_page()
 
@@ -330,8 +298,9 @@ def generate_pdf(schedule_data_for_pdf, start_date_pdf, end_date_pdf, pairs_pdf,
     bold_font_path = "fonts/DejaVuSans-Bold.ttf"
 
     try:
+        # Перевірка наявності папки fonts та шрифтів
         if not os.path.exists("fonts"):
-            os.makedirs("fonts")
+            os.makedirs("fonts") # Створити папку, якщо її немає
         if not os.path.exists(regular_font_path):
             st.error(f"Шрифт не знайдено: {regular_font_path}. Будь ласка, завантажте 'DejaVuSans.ttf' у папку 'fonts'.")
             return None
@@ -430,7 +399,7 @@ def generate_pdf(schedule_data_for_pdf, start_date_pdf, end_date_pdf, pairs_pdf,
 
             pdf.set_font("DejaVuSans", "", 7)
             for i_pair in range(len(pairs_pdf)):
-                item = schedule_data_for_pdf.get((i_day, i_group, i_pair), {"subject": "", "teacher": ""})
+                item = schedule_data[(i_day, i_group, i_pair)]
                 text = f"{item['subject']}\n{item['teacher']}"
 
                 cell_start_x = pdf.get_x()
@@ -443,3 +412,27 @@ def generate_pdf(schedule_data_for_pdf, start_date_pdf, end_date_pdf, pairs_pdf,
         pdf.set_xy(initial_x, day_block_start_y + required_height_for_day_block)
 
     return pdf.output(dest='S').encode('latin1')
+
+# Назва файлу PDF з вибраним тижнем
+pdf_file_name = f"розклад_{st.session_state.start_date.strftime('%d.%m')}–{end_date.strftime('%d.%m')}.pdf"
+
+# Кнопка "Зберегти" (заглушка)
+with col_save_btn:
+    if st.button("💾 Зберегти", key="save_button"):
+        st.info("Функція 'Зберегти' буде реалізована пізніше.")
+
+# Кнопка "Завантажити PDF"
+with col_download_btn:
+    # Передаємо session_state.start_date до generate_pdf
+    pdf_bytes = generate_pdf(schedule_data, st.session_state.start_date, end_date, pairs, days, group_names, num_groups_per_day)
+
+    if pdf_bytes:
+        st.download_button(
+            label="⬇️ Завантажити PDF",
+            data=pdf_bytes,
+            file_name=pdf_file_name,
+            mime="application/pdf",
+            key="download_button"
+        )
+    else:
+        st.warning("Не вдалося згенерувати PDF-файл.")
