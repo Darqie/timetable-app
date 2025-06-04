@@ -471,8 +471,9 @@ html_code += """
 # Видалено 'key' з components.html, як було виправлено
 component_value = components.html(html_code, height=800, scrolling=True)
 
-# Додано перевірку типу для component_value
-if component_value is not None and isinstance(component_value, dict):
+# Додано перевірку типу для component_value, щоб уникнути помилки StreamlitAPIException
+# та "Неочікуваний тип даних від HTML-компонента: <class 'streamlit.delta_generator.DeltaGenerator'>"
+if isinstance(component_value, dict):
     new_schedule_data = {}
     for key_str, item in component_value.items():
         day_idx, group_idx, pair_idx = map(int, key_str.split(','))
@@ -482,9 +483,8 @@ if component_value is not None and isinstance(component_value, dict):
         st.session_state.schedule_data = new_schedule_data
         save_schedule_to_db(db_conn, st.session_state.start_date, st.session_state.schedule_data)
         st.experimental_rerun()
-# else: # Закоментуйте або видаліть цей else блок, щоб уникнути помилки DeltaGenerator, якщо компонент ще не повернув дані
-#     st.info("HTML-компонент ще не повернув дані або повернув неочікуваний тип.") # Додано для налагодження
-#     st.error(f"Неочікуваний тип даних від HTML-компонента: {type(component_value)}. Повинно бути 'dict'.")
+# Якщо component_value не є словником, код просто пропустить обробку.
+# Це нормально при початковому завантаженні, коли компонент ще не надіслав дані.
 
 
 def generate_pdf(schedule_data_pdf, start_date_pdf, end_date_pdf, pairs_pdf, days_pdf, group_names_pdf, num_groups_per_day_pdf):
