@@ -7,14 +7,19 @@ import os
 
 st.set_page_config(page_title="Розклад пар", layout="wide")
 
+# Розміщення назви "Розклад пар" по центру
 st.markdown("<h2 style='text-align: center; margin-bottom: 10px;'>Розклад пар</h2>", unsafe_allow_html=True)
 
-col1, col2 = st.columns(2)
-with col1:
-    start_date = st.date_input("Початок тижня", date(2025, 6, 2))
-with col2:
-    end_date = start_date + timedelta(days=4)
-    st.markdown(f"### 📆 {start_date.strftime('%d.%m.%Y')} – {end_date.strftime('%d.%m.%Y')}")
+# Вибір початку тижня - менший та зліва нагорі
+# Використовуємо st.columns, щоб контролювати позицію
+date_col, _ = st.columns([0.2, 0.8]) # 20% для дати, 80% для відступу
+with date_col:
+    start_date = st.date_input("Початок тижня", date(2025, 6, 2), key="start_date_picker", label_visibility="collapsed") # label_visibility приховує напис, щоб зменшити місце
+
+end_date = start_date + timedelta(days=4)
+
+# Відображення тижня по центру, одразу під назвою "Розклад пар"
+st.markdown(f"<h3 style='text-align: center; margin-top: 0px;'>📆 {start_date.strftime('%d.%m.%Y')} – {end_date.strftime('%d.%m.%Y')}</h3>", unsafe_allow_html=True)
 
 pairs = [
     ("I", "8:30 – 9:50"),
@@ -241,6 +246,7 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
         return None
 
     pdf.set_font("DejaVuSans", "B", 14)
+    # Змінено: відображення тижня по центру в PDF
     pdf.cell(0, 10, txt=f"Розклад: {start_date.strftime('%d.%m.%Y')} – {end_date.strftime('%d.%m.%Y')}", ln=True, align="C")
     pdf.ln(5)
 
@@ -275,13 +281,10 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
     pdf.set_font("DejaVuSans", "", 7)
     
     for i_day, day_name in enumerate(days):
-        # Залишок висоти сторінки: pdf.h - pdf.b_margin - pdf.get_y()
         required_height_for_day_block = content_cell_height * num_groups_per_day
         
-        # Перевіряємо, чи вміститься блок дня на поточній сторінці
         if pdf.get_y() + required_height_for_day_block > (pdf.h - pdf.b_margin):
             pdf.add_page()
-            # Перемальовуємо верхні заголовки на новій сторінці
             pdf.set_font("DejaVuSans", "B", 10)
             pdf.set_xy(initial_x, pdf.t_margin)
             pdf.cell(day_col_width, header_height, txt="", border=1, align="C")
@@ -298,49 +301,36 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
 
         day_block_start_y = pdf.get_y()
 
-        # Позиція для центрування повернутого тексту дня
         day_text_center_x = initial_x + day_col_width / 2
         day_text_center_y = day_block_start_y + required_height_for_day_block / 2
 
-        # Малюємо вертикальний текст дня лише один раз для всього блоку дня
-        # Умова перевіряє, чи ми на початку нового дня, або якщо це продовження таблиці на новій сторінці
-        # і цей день є першим днем на цій новій сторінці.
-        # Малюємо рамку для блоку дня
-        # Щоб уникнути зайвих ліній, малюємо рамку лише один раз для всього блоку дня
+        # Малюємо фон і рамку для блоку дня
         pdf.set_fill_color(240, 200, 100) # Колір фону для дня (жовтуватий)
         pdf.rect(initial_x, day_block_start_y, day_col_width, required_height_for_day_block, 'F') # Заливка фону
         pdf.rect(initial_x, day_block_start_y, day_col_width, required_height_for_day_block, 'D') # Рамка навколо всього блоку дня
 
+        # Малюємо повернутий текст дня
         pdf.set_font("DejaVuSans", "B", 12)
-        pdf.set_text_color(0, 0, 0) # Чорний текст
+        pdf.set_text_color(0, 0, 0)
         pdf.rotate(90, day_text_center_x, day_text_center_y)
         
         text_width = pdf.get_string_width(day_name)
-        # Для повернутого тексту, x-координата (для set_xy) стає y-координатою в неповернутій системі
-        # А y-координата стає -x-координатою.
-        # Щоб відцентрувати:
-        # X-позиція: центр Y у неповернутій - половина ширини тексту
-        # Y-позиція: центр X у неповернутій - половина висоти тексту
         pdf.set_xy(day_text_center_x - text_width / 2, day_text_center_y - pdf.font_size / 2)
         pdf.cell(text_width, pdf.font_size, txt=day_name, align="C")
-        pdf.rotate(0) # Повертаємо назад
-        pdf.set_font("DejaVuSans", "", 7) # Повертаємо основний шрифт
+        pdf.rotate(0)
+        pdf.set_font("DejaVuSans", "", 7)
 
         for i_group in range(num_groups_per_day):
-            current_row_start_x = initial_x + day_col_width # X-позиція початку стовпця "Група"
-            current_row_start_y = day_block_start_y + (i_group * content_cell_height) # Y-позиція початку поточного рядка групи
+            current_row_start_x = initial_x + day_col_width
+            current_row_start_y = day_block_start_y + (i_group * content_cell_height)
             
-            # Встановлюємо курсор на початок стовпця "Група" для поточного рядка
             pdf.set_xy(current_row_start_x, current_row_start_y)
 
-            # Заголовок групи
             pdf.set_font("DejaVuSans", "", 8)
             pdf.cell(group_col_width, content_cell_height, txt=group_names[i_group], border=1, align="C")
             
-            # Переміщуємо курсор на початок стовпців з даними
             pdf.set_xy(current_row_start_x + group_col_width, current_row_start_y)
 
-            # Клітинки з вмістом для кожної пари
             pdf.set_font("DejaVuSans", "", 7)
             for i_pair in range(len(pairs)):
                 item = schedule_data[(i_day, i_group, i_pair)]
@@ -353,25 +343,20 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
                 
                 pdf.set_xy(cell_start_x + pair_col_width, cell_start_y)
             
-            # Після заповнення всіх пар для поточної групи,
-            # курсор вже перемістився на кінець рядка.
-            # Якщо це остання група в блоці дня, то pdf.get_y() вже буде на правильній позиції для наступного дня.
-            # Якщо ні, то наступна ітерація циклу for i_group... встановить set_xy.
-        
-        # Після того, як всі групи для дня намальовані, переходимо на новий рядок для наступного дня
-        # (або для верхнього заголовка на новій сторінці, якщо додали add_page)
         pdf.set_xy(initial_x, day_block_start_y + required_height_for_day_block)
-
 
     return pdf.output(dest='S').encode('latin1')
 
 pdf_bytes = generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, num_groups_per_day)
 
+# Назва файлу PDF з вибраним тижнем
+pdf_file_name = f"розклад_{start_date.strftime('%d.%m')}–{end_date.strftime('%d.%m')}.pdf"
+
 if pdf_bytes:
     st.download_button(
         label="⬇️ Завантажити PDF",
         data=pdf_bytes,
-        file_name="розклад.pdf",
+        file_name=pdf_file_name, # Використовуємо нову назву файлу
         mime="application/pdf"
     )
 else:
