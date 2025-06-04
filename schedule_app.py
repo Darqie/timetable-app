@@ -25,40 +25,52 @@ pairs = [
     ("V", "14:45 – 16:05"),
 ]
 days = ["Понеділок", "Вівторок", "Середа", "Четвер", "П’ятниця"]
+num_groups_per_day = 6 # Кількість груп під кожним днем
 
-# Додаємо список груп
-groups = ["Група 1", "Група 2", "Група 3", "Група 4", "Група 5"] # Змінено на 5 груп для відповідності 5 дням
+# Створюємо список груп для зручності відображення
+# (можна адаптувати, якщо назви груп не просто "Група X")
+group_names = [f"Група {i+1}" for i in range(num_groups_per_day)]
 
-# Генерація даних (можливо, потрібно буде адаптувати, якщо груп буде більше, ніж колонок для днів)
+
+# Генерація даних
+# Тепер ключі schedule_data будуть (пара_індекс, день_індекс, група_індекс)
 schedule_data = {}
-for i in range(5): # Індекс для пар (рядків)
-    for j in range(5): # Індекс для днів/груп (колонок)
-        schedule_data[(i, j)] = {
-            "teacher": f"Викладач {i+1}",
-            "group": f"Група {j+1}", # Змінено для відповідності 'Група 1', 'Група 2'
-            "subject": f"Предмет {j+1}",
-            "id": str(uuid.uuid4())
-        }
+for i_pair in range(len(pairs)):
+    for i_day in range(len(days)):
+        for i_group in range(num_groups_per_day):
+            # Унікальний ключ для кожної клітинки
+            key = (i_pair, i_day, i_group)
+            schedule_data[key] = {
+                "teacher": f"Викладач {i_pair+1}-{i_day+1}-{i_group+1}",
+                "group": group_names[i_group],
+                "subject": f"Предмет {i_pair+1}-{i_day+1}-{i_group+1}",
+                "id": str(uuid.uuid4())
+            }
 
-# HTML + CSS (оновлено для зміни формату нумерації)
+# HTML + CSS
 html_code = f"""
 <style>
 .timetable {{
     display: grid;
-    /* Оновлено: 180px для часу, потім 5 стовпців для днів/груп */
-    grid-template-columns: 180px repeat({len(days)}, 1fr);
+    /* 180px для часу, потім (кількість днів * кількість груп на день) стовпців */
+    grid-template-columns: 180px repeat({len(days) * num_groups_per_day}, 1fr);
     grid-auto-rows: minmax(50px, auto); /* Адаптивна висота рядків */
     gap: 2px;
     font-family: 'Segoe UI', sans-serif;
+    overflow-x: auto; /* Додаємо горизонтальну прокрутку */
+    max-width: 100%; /* Обмежуємо ширину, щоб не виходило за межі */
 }}
 .cell {{
     border: 1px solid #ccc;
     background: #f9f9f9;
     position: relative;
-    padding: 8px;
+    padding: 4px; /* Зменшений padding для великої кількості клітинок */
     overflow: hidden;
     border-radius: 8px;
     box-shadow: 1px 1px 4px rgba(0,0,0,0.05);
+    font-size: 12px; /* Зменшений шрифт для вмісту */
+    min-width: 80px; /* Мінімальна ширина для клітинки групи */
+    box-sizing: border-box; /* Важливо для розрахунку ширини */
 }}
 .cell-header {{
     background: #e0ecff;
@@ -66,17 +78,18 @@ html_code = f"""
     text-align: center;
     border-radius: 8px;
     display: flex;
-    flex-direction: column; /* Змінено на column для вертикального розташування */
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 5px; /* Зменшений відступ для заголовків */
+    padding: 5px;
 }}
 .draggable {{
     background: #d0e7ff;
     border-radius: 6px;
-    padding: 6px;
+    padding: 4px; /* Зменшений padding */
     cursor: grab;
     box-shadow: 2px 2px 6px rgba(0,0,0,0.1);
+    font-size: 11px; /* Зменшений шрифт для draggable елементів */
 }}
 .time-block {{
     font-size: 14px;
@@ -84,54 +97,58 @@ html_code = f"""
     text-align: center;
     line-height: 1.2; 
 }}
-.group-header {{
-    background: #e0ecff; /* Той самий колір, що й для інших заголовків */
+.day-header {{
+    grid-column: span {num_groups_per_day}; /* Заголовок дня охоплює 6 колонок */
+    background: #cce0ff; /* Трохи інший колір для заголовків днів */
+    font-size: 16px;
+}}
+.group-sub-header {{
+    background: #e0ecff;
     font-weight: bold;
     text-align: center;
     border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 5px;
+    padding: 3px; /* Ще менший відступ */
+    font-size: 12px;
 }}
 </style>
 
 <div class="timetable">
     <div class="cell cell-header"></div> """
 
-# Дні тижня (перший рядок заголовків)
+# Перший рядок: Заголовки днів (об'єднані комірки)
 for day in days:
-    html_code += f'<div class="cell cell-header">{day}</div>'
+    html_code += f'<div class="cell cell-header day-header">{day}</div>'
 
-# Рядок з групами (другий рядок заголовків)
-html_code += f'<div class="cell group-header"></div>' # Пуста комірка або "Час" для відповідності сітці
-for group in groups:
-    html_code += f'<div class="cell group-header">{group}</div>'
+# Другий рядок: Заголовки груп під відповідними днями
+html_code += f'<div class="cell cell-header"></div>' # Пуста комірка для відповідності з першим стовпцем (часом)
+for day in days:
+    for group_name in group_names:
+        html_code += f'<div class="cell group-sub-header">{group_name}</div>'
 
-# Пари зліва + клітинки (оновлено: "Пара" і час на різних рядках)
-for i, (roman, time_range) in enumerate(pairs):
+# Основна частина таблиці: Пари + клітинки з даними
+for i_pair, (roman, time_range) in enumerate(pairs):
     html_code += f'''
         <div class="cell cell-header time-block">
             <div><strong>{roman} Пара</strong></div> 
             <div>({time_range})</div>
         </div>
     '''
-    for j in range(5):
-        # Важливо: Якщо ви хочете, щоб дані відповідати групам,
-        # то індекс 'j' має відповідати індексу групи.
-        # Наразі 'j' йде від 0 до 4, що відповідає кількості днів.
-        # Якщо у вас 6 груп, а днів 5, вам потрібно буде переглянути логіку 'schedule_data'.
-        # Я залишаю 5 груп, щоб відповідати 5 дням.
-        item = schedule_data[(i, j)] 
-        html_code += f'''
-        <div class="cell" ondrop="drop(event)" ondragover="allowDrop(event)">
-            <div id="{item['id']}" class="draggable" draggable="true" ondragstart="drag(event)">
-                <strong>{item["subject"]}</strong><br>
-                {item["teacher"]}<br>
-                {item["group"]}
+    # Для кожної пари проходимося по днях, а потім по групах
+    for i_day in range(len(days)):
+        for i_group in range(num_groups_per_day):
+            item = schedule_data[(i_pair, i_day, i_group)]
+            html_code += f'''
+            <div class="cell" ondrop="drop(event)" ondragover="allowDrop(event)">
+                <div id="{item['id']}" class="draggable" draggable="true" ondragstart="drag(event)">
+                    <strong>{item["subject"]}</strong><br>
+                    {item["teacher"]}<br>
+                    {item["group"]}
+                </div>
             </div>
-        </div>
-        '''
+            '''
 
 html_code += """
 </div>
@@ -149,9 +166,15 @@ function drop(ev) {
   var draggedElem = document.getElementById(draggedId);
 
   var dropTarget = ev.target;
+  // Перевіряємо, чи dropTarget є .cell або його дочірнім елементом
   while (!dropTarget.classList.contains("cell")) {
     dropTarget = dropTarget.parentNode;
-    if (!dropTarget) return;
+    if (!dropTarget) return; // Вихід, якщо батьківський елемент не знайдено
+  }
+
+  // Перевіряємо, чи dropTarget є заголовком, якщо так, то не дозволяємо перетягування
+  if (dropTarget.classList.contains("cell-header") || dropTarget.classList.contains("group-sub-header")) {
+    return; // Не дозволяємо кидати на заголовки
   }
 
   var existing = dropTarget.querySelector(".draggable");
@@ -167,78 +190,108 @@ function drop(ev) {
 </script>
 """
 
-# Збільшимо висоту компонента, щоб врахувати новий рядок
-components.html(html_code, height=880, scrolling=True) # Збільшено висоту
+# Збільшимо висоту компонента
+components.html(html_code, height=880, scrolling=True) # Можливо, знадобиться ще більше, залежить від вмісту
+
 
 # ⬇️ ОДНА КНОПКА ЗАВАНТАЖЕННЯ PDF ⬇️
 # Функція для генерації PDF-файлу
-def generate_pdf(schedule_data, start_date, end_date, pairs, days, groups): # Передаємо groups
-    pdf = FPDF()
+def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, num_groups_per_day):
+    pdf = FPDF(orientation='L') # Орієнтація "L" (Landscape) для широкого розкладу
     pdf.add_page()
 
-    # Шлях до файлу шрифту (відносно кореня вашого додатку)
     regular_font_path = "fonts/DejaVuSans.ttf"
-    bold_font_path = "fonts/DejaVuSans-Bold.ttf" # Припускаємо, що файл називається так
+    bold_font_path = "fonts/DejaVuSans-Bold.ttf"
 
     try:
-        # Додаємо регулярний шрифт
         pdf.add_font("DejaVuSans", "", regular_font_path, uni=True)
-        
-        # Додаємо жирний шрифт
-        pdf.add_font("DejaVuSans", "B", bold_font_path, uni=True) 
-        
-        pdf.set_font("DejaVuSans", "", size=12) # Встановлюємо поточний шрифт як регулярний за замовчуванням
+        pdf.add_font("DejaVuSans", "B", bold_font_path, uni=True)
+        pdf.set_font("DejaVuSans", "", size=10)
     except Exception as e:
         st.error(f"Помилка завантаження шрифту: {e}. Переконайтеся, що файли шрифтів (регулярний та жирний) існують у папці 'fonts' та правильно вказані шляхи.")
-        return None 
+        return None
 
     pdf.set_font("DejaVuSans", "B", 14)
-    pdf.cell(200, 10, txt=f"Розклад: {start_date.strftime('%d.%m.%Y')} – {end_date.strftime('%d.%m.%Y')}", ln=True, align="C")
+    pdf.cell(0, 10, txt=f"Розклад: {start_date.strftime('%d.%m.%Y')} – {end_date.strftime('%d.%m.%Y')}", ln=True, align="C")
     pdf.ln(5)
 
-    # Заголовки днів тижня у PDF
-    pdf.set_font("DejaVuSans", "B", 10)
-    # Налаштуйте ширину колонок для PDF, щоб відповідати кількості днів + час
-    col_width = 180 / (len(days) + 1) # приблизна ширина для дня
-    
-    # Заголовок для часу
-    pdf.cell(col_width, 10, txt="", border=1, align="C") # Пуста комірка для часу
+    # Ширина сторінки мінус відступи
+    page_width = pdf.w - 2 * pdf.l_margin
+    # Ширина однієї комірки для групи
+    group_col_width = (page_width - 30) / (len(days) * num_groups_per_day) # 30px для колонки часу
+
+    # Заголовки днів (об'єднані)
+    pdf.set_font("DejaVuSans", "B", 12)
+    # Зберігаємо X-позицію для наступного рядка
+    start_x = pdf.get_x()
+    start_y = pdf.get_y()
+
+    # Заголовок для "Пари/Часу"
+    pdf.multi_cell(30, 20, txt="Пара\nЧас", border=1, align="C", valign="M") # Початкова комірка для часу
+    pdf.set_xy(start_x + 30, start_y) # Переміщуємося на початок першого дня
+
     for day in days:
-        pdf.cell(col_width, 10, txt=day, border=1, align="C")
+        # FPDF не має прямого grid-column-span. Ми вручну малюємо об'єднану комірку
+        # Комірка дня охоплює N колонок груп
+        pdf.cell(group_col_width * num_groups_per_day, 10, txt=day, border=1, align="C")
     pdf.ln()
 
-    # Заголовки груп у PDF
-    pdf.set_font("DejaVuSans", "", 10) # Звичайний шрифт для груп
-    pdf.cell(col_width, 10, txt="", border=1, align="C") # Пуста комірка
-    for group in groups:
-        pdf.cell(col_width, 10, txt=group, border=1, align="C")
+    # Заголовки груп
+    pdf.set_font("DejaVuSans", "", 8) # Зменшений шрифт для груп
+    # Відновлюємо X-позицію
+    pdf.set_xy(start_x, pdf.get_y()) # Повертаємося до початку рядка
+
+    pdf.cell(30, 10, txt="", border=1, align="C") # Пуста комірка під "Пара/Час"
+    for day in days:
+        for group_name in group_names:
+            pdf.cell(group_col_width, 10, txt=group_name, border=1, align="C")
     pdf.ln()
 
+    # Основний контент таблиці
+    pdf.set_font("DejaVuSans", "", 7) # Ще менший шрифт для вмісту клітинок
+    for i_pair, (roman, time_range) in enumerate(pairs):
+        start_x = pdf.get_x() # Зберігаємо X-позицію початку рядка
+        start_y = pdf.get_y() # Зберігаємо Y-позицію початку рядка
 
-    # Оновлено для PDF: "Пара" і час на різних рядках
-    for i, (roman, time_range) in enumerate(pairs):
         # Комірка для часу та номера пари
-        pdf.set_font("DejaVuSans", "B", 10)
-        pdf.cell(col_width, 20, txt=f"{roman} Пара\n({time_range})", border=1, align="C", center=True) # Використовуємо multi_cell, якщо це можливо, або 2 cell
+        pdf.multi_cell(30, 20, txt=f"{roman} Пара\n({time_range})", border=1, align="C", valign="M")
         
-        pdf.set_font("DejaVuSans", "", 8) # Зменшимо шрифт для вмісту клітинок
-        for j, day in enumerate(days): # Тут 'j' відповідає дням, а не групам
-            item = schedule_data[(i, j)]
-            # Можливо, потрібно буде адаптувати, як відображається інформація в PDF
-            # Залежить від того, чи хочете ви, щоб PDF відображав групи як окремі стовпці
-            # або просто включав групу в опис предмета.
-            # Якщо ви хочете, щоб кожна клітинка в HTML відповідала клітинці в PDF,
-            # логіка PDF має бути більш складною.
-            text = f"{item['subject']}\n{item['teacher']}\n{item['group']}"
-            pdf.multi_cell(col_width, 10, txt=text, border=1, align="C") # Використовуємо multi_cell для кількох рядків
-            
-        pdf.ln(2) # Новий рядок після кожної пари
+        # Переміщуємося на початок колонок для даних
+        pdf.set_xy(start_x + 30, start_y)
 
+        for i_day in range(len(days)):
+            for i_group in range(num_groups_per_day):
+                item = schedule_data[(i_pair, i_day, i_group)]
+                text = f"{item['subject']}\n{item['teacher']}\n{item['group']}"
+                # multi_cell для вмісту, щоб він міг переноситись
+                # Перевіряємо, чи влізе текст в клітинку
+                current_x = pdf.get_x()
+                current_y = pdf.get_y()
+
+                # Створюємо тимчасовий об'єкт FPDF для розрахунку висоти тексту
+                temp_pdf = FPDF()
+                temp_pdf.add_font("DejaVuSans", "", regular_font_path, uni=True)
+                temp_pdf.add_font("DejaVuSans", "B", bold_font_path, uni=True)
+                temp_pdf.set_font("DejaVuSans", "", 7)
+                
+                # Обчислюємо висоту, яку займе multi_cell
+                text_height = temp_pdf.get_string_width(text) / group_col_width * temp_pdf.font_size * 1.2 # Приблизна висота
+                
+                # Встановлюємо максимальну висоту клітинки
+                cell_height = max(20, text_height + 2) # Мінімальна 20, або більше якщо текст великий
+
+                pdf.multi_cell(group_col_width, 20 / 3, txt=text, border=1, align="C") # 20 / 3 для 3-х рядків тексту
+                # Повертаємося на поточну Y-позицію, щоб продовжити наступну клітинку в тому ж рядку
+                pdf.set_xy(current_x + group_col_width, current_y)
+        
+        pdf.ln(20) # Переходимо на новий рядок після заповнення всіх груп для поточної пари
+        # Увага: FPDF не дуже добре працює з автоматичним вирівнюванням рядків,
+        # якщо комірки мають різну висоту. Можливо, доведеться вручну обчислювати max_row_height
 
     return pdf.output(dest='S').encode('latin1') 
 
 # Кнопка для завантаження PDF
-pdf_bytes = generate_pdf(schedule_data, start_date, end_date, pairs, days, groups) # Передаємо groups в функцію
+pdf_bytes = generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, num_groups_per_day)
 
 if pdf_bytes: 
     st.download_button(
