@@ -5,8 +5,8 @@ from datetime import date, timedelta
 from fpdf import FPDF
 import os
 import json
-import psycopg2
-from sqlalchemy import text
+import psycopg2 # Для обробки специфічних помилок psycopg2
+from sqlalchemy import text # Для виконання SQL запитів через SQLAlchemy
 
 st.set_page_config(page_title="Розклад пар", layout="wide")
 
@@ -16,10 +16,11 @@ def get_db_connection():
     """Створює та кешує з'єднання з базою даних PostgreSQL та ініціалізує таблицю."""
     try:
         conn = st.connection('postgresql', type='sql')
-        
+
         # Ініціалізація бази даних відбувається тут, всередині кешованої функції
         # Це гарантує, що таблиця буде створена при першому отриманні з'єднання
         try:
+            # Використовуємо SQLAlchemy text() для виконання DDL команд
             conn.session.execute(text('''
                 CREATE TABLE IF NOT EXISTS schedule (
                     week_start_date TEXT PRIMARY KEY,
@@ -29,10 +30,11 @@ def get_db_connection():
             conn.session.commit()
             st.success("База даних ініціалізована. Таблиця 'schedule' існує або була створена.")
         except Exception as e:
-            conn.session.rollback()
+            conn.session.rollback() # Відкочуємо транзакцію у випадку помилки
             st.error(f"Помилка при ініціалізації бази даних (створення таблиці): {e}")
-            st.stop() # Зупиняємо виконання, якщо не вдалося створити таблицю
-        
+            # У випадку критичної помилки ініціалізації, зупиняємо додаток
+            st.stop()
+
         st.success("Успішно підключено до PostgreSQL через st.connection!")
         return conn
     except Exception as e:
@@ -46,12 +48,13 @@ def save_schedule_to_db(conn, week_start_date, schedule_data):
        Використовує conn.query() для INSERT/UPDATE."""
     week_start_date_str = week_start_date.strftime('%Y-%m-%d')
     serializable_schedule_data = {}
+    # Перетворюємо ключі tuple на string для JSON серіалізації
     for (day_idx, group_idx, pair_idx), item in schedule_data.items():
         key_str = f"{day_idx},{group_idx},{pair_idx}"
         serializable_schedule_data[key_str] = item
 
     data_json = json.dumps(serializable_schedule_data, ensure_ascii=False)
-    
+
     try:
         conn.query(
             "INSERT INTO schedule (week_start_date, data) VALUES (:week_start_date, :data) ON CONFLICT (week_start_date) DO UPDATE SET data = EXCLUDED.data;",
@@ -61,14 +64,14 @@ def save_schedule_to_db(conn, week_start_date, schedule_data):
             }
         )
         st.toast("Розклад збережено!")
+    except psycopg2.errors.UndefinedTable: # Ловимо саме UndefinedTable
+        st.warning("Виявлено помилку UndefinedTable під час збереження. Спроба очистити кеш ресурсів і перезапустити.")
+        st.cache_resource.clear()
+        st.experimental_rerun() # Примусовий перезапуск після очищення кешу
     except Exception as e:
-        st.error(f"Помилка при збереженні розкладу: {e}")
-        if "UndefinedTable" in str(e):
-            st.warning("Виявлено помилку UndefinedTable під час збереження. Спроба очистити кеш ресурсів і перезапустити.")
-            st.cache_resource.clear()
-            st.experimental_rerun() # Примусовий перезапуск після очищення кешу
-        # Важливо: якщо виникає інша помилка, не перезапускаємо бездумно
-        st.stop() # Зупиняємо виконання, щоб уникнути каскадних помилок, якщо проблема не вирішена
+        st.error(f"Загальна помилка при збереженні розкладу: {e}")
+        st.stop() # Зупиняємо виконання, якщо інша критична помилка
+
 
 def load_schedule_from_db(conn, week_start_date):
     """Завантажує дані розкладу для конкретного тижня з бази даних.
@@ -77,26 +80,25 @@ def load_schedule_from_db(conn, week_start_date):
     try:
         df = conn.query("SELECT data FROM schedule WHERE week_start_date = :week_start_date;",
                         params={"week_start_date": week_start_date_str})
-        
+
         if not df.empty:
             loaded_data_json = df.iloc[0]['data']
             deserialized_data = json.loads(loaded_data_json)
             schedule_data = {}
+            # Перетворюємо ключі string назад у tuple
             for key_str, item in deserialized_data.items():
                 day_idx, group_idx, pair_idx = map(int, key_str.split(','))
                 schedule_data[(day_idx, group_idx, pair_idx)] = item
             return schedule_data
-        return None
+        return None # Повертаємо None, якщо запис не знайдено
+    except psycopg2.errors.UndefinedTable: # Ловимо саме UndefinedTable
+        st.warning("Виявлено помилку UndefinedTable під час завантаження. Спроба очистити кеш ресурсів і перезапустити.")
+        st.cache_resource.clear()
+        st.experimental_rerun() # Примусовий перезапуск після очищення кешу
     except Exception as e:
-        st.error(f"Помилка при завантаженні розкладу: {e}")
-        if "UndefinedTable" in str(e):
-            st.warning("Виявлено помилку UndefinedTable під час завантаження. Спроба очистити кеш ресурсів і перезапустити.")
-            st.cache_resource.clear()
-            st.experimental_rerun() # Примусовий перезапуск після очищення кешу
-        # Важливо: якщо виникає інша помилка, не перезапускаємо бездумно
-        st.stop() # Зупиняємо виконання, щоб уникнути каскадних помилок, якщо проблема не вирішена
+        st.error(f"Загальна помилка при завантаженні розкладу: {e}")
+        st.stop() # Зупиняємо виконання, якщо інша критична помилка
         return None # Повертаємо None у випадку помилки
-
 
 # Отримання з'єднання з базою даних. Тепер це включає ініціалізацію таблиці.
 db_conn = get_db_connection()
@@ -109,17 +111,44 @@ st.markdown("---") # Розділювач
 
 # ----- Блок Опцій: Вибір тижня, Зберегти, Завантажити -----
 
-col_label, col_date_input, col_spacer_date, col_save_btn, col_download_btn, _ = st.columns([0.13, 0.15, 0.03, 0.1, 0.14, 0.45])
-
+# Ініціалізація st.session_state.start_date та st.session_state.schedule_data
+# Це відбувається ОДИН РАЗ на початку сесії.
 if 'start_date' not in st.session_state:
     st.session_state.start_date = date(2025, 6, 2) # Або date.today(), якщо хочете поточну дату як стартову
-    # Завантаження розкладу при першому запуску/оновленні сесії
-    initial_load = load_schedule_from_db(db_conn, st.session_state.start_date)
-    if initial_load:
-        st.session_state.schedule_data = initial_load
+    # Тепер ми НЕ завантажуємо дані тут, щоб уникнути проблем з experimental_rerun.
+    # Дані будуть завантажені або ініціалізовані нижче, після ініціалізації всіх st.session_state.
+    st.session_state.schedule_data = {} # Ініціалізуємо порожнім словником, щоб уникнути KeyError
+
+# Перевіряємо, чи ініціалізовано schedule_data після potential experimental_rerun
+# Це важливо, оскільки experimental_rerun починає скрипт заново, але зберігає session_state.
+if not st.session_state.schedule_data:
+    # Спробувати завантажити дані для поточного тижня
+    loaded_data = load_schedule_from_db(db_conn, st.session_state.start_date)
+    if loaded_data:
+        st.session_state.schedule_data = loaded_data
     else:
-        # Якщо завантаження не вдалося або таблиця порожня, ініціалізуємо порожнім словником
-        st.session_state.schedule_data = {} 
+        # Якщо немає даних у БД для поточного тижня, ініціалізуємо стандартними
+        initial_schedule_data = {}
+        pairs_config = [("I", "8:30 – 9:50"), ("II", "10:00 – 11:20"), ("III", "11:35 – 12:55"), ("IV", "13:15 – 14:35"), ("V", "14:45 – 16:05")]
+        days_config = ["Понеділок", "Вівторок", "Середа", "Четвер", "П’ятниця"]
+        num_groups_per_day_config = 6
+        group_names_config = [f"Група {i+1}" for i in range(num_groups_per_day_config)]
+
+        for i_day in range(len(days_config)):
+            for i_group in range(num_groups_per_day_config):
+                for i_pair in range(len(pairs_config)):
+                    key = (i_day, i_group, i_pair)
+                    initial_schedule_data[key] = {
+                        "teacher": f"Вч.{chr(65 + i_day)}.{i_group+1}.{i_pair+1}",
+                        "group": group_names_config[i_group],
+                        "subject": f"Предм.{i_pair+1}-{i_group+1}",
+                        "id": str(uuid.uuid4())
+                    }
+        st.session_state.schedule_data = initial_schedule_data
+        # Зберігаємо ці ініціалізовані дані до бази даних
+        save_schedule_to_db(db_conn, st.session_state.start_date, st.session_state.schedule_data)
+
+col_label, col_date_input, col_spacer_date, col_save_btn, col_download_btn, _ = st.columns([0.13, 0.15, 0.03, 0.1, 0.14, 0.45])
 
 with col_label:
     st.markdown(
@@ -143,14 +172,14 @@ with col_label:
     )
 
 with col_date_input:
-    selected_date = st.date_input("", st.session_state.start_date, key="manual_date_picker")
+    selected_date = st.date_input("", st.session_state.start_date, key="manual_date_picker", label_visibility="hidden") # Приховано label для уникнення попередження
     if selected_date != st.session_state.start_date:
         st.session_state.start_date = selected_date
         loaded_data = load_schedule_from_db(db_conn, st.session_state.start_date)
         if loaded_data:
             st.session_state.schedule_data = loaded_data
         else:
-            st.session_state.schedule_data = {}
+            st.session_state.schedule_data = {} # Якщо для нового тижня немає даних, робимо його порожнім
         st.experimental_rerun()
 
 end_date = st.session_state.start_date + timedelta(days=4)
@@ -208,27 +237,8 @@ days = ["Понеділок", "Вівторок", "Середа", "Четвер"
 num_groups_per_day = 6
 group_names = [f"Група {i+1}" for i in range(num_groups_per_day)]
 
-# Ініціалізація або завантаження schedule_data
-# Цей блок повинен ініціалізувати st.session_state.schedule_data лише один раз,
-# або якщо дані для поточного тижня відсутні після спроби завантаження.
-if not st.session_state.get('schedule_data'): # Перевіряємо, чи існує ключ, а не чи він порожній
-    initial_schedule_data = {}
-    for i_day in range(len(days)):
-        for i_group in range(num_groups_per_day):
-            for i_pair in range(len(pairs)):
-                key = (i_day, i_group, i_pair)
-                initial_schedule_data[key] = {
-                    "teacher": f"Вч.{chr(65 + i_day)}.{i_group+1}.{i_pair+1}",
-                    "group": group_names[i_group],
-                    "subject": f"Предм.{i_pair+1}-{i_group+1}",
-                    "id": str(uuid.uuid4())
-                }
-    st.session_state.schedule_data = initial_schedule_data
-    # Якщо дані завантажуються вперше і вони є початковими, зберігаємо їх у БД
-    # Цей save_schedule_to_db тут є важливою частиною ініціалізації.
-    save_schedule_to_db(db_conn, st.session_state.start_date, st.session_state.schedule_data)
-
 # Отримуємо поточні дані розкладу для відображення
+# Вони вже ініціалізовані або завантажені вище
 current_schedule_data = st.session_state.schedule_data
 
 html_code = f"""
@@ -368,7 +378,7 @@ for i_day, day_name in enumerate(days):
                 "teacher": "Немає", "group": group_names[i_group], "subject": "Пусто", "id": str(uuid.uuid4())
             })
             item_id = item.get('id', str(uuid.uuid4()))
-            
+
             escaped_subject = item["subject"].replace('"', '&quot;')
             escaped_teacher = item["teacher"].replace('"', '&quot;')
 
@@ -405,8 +415,8 @@ html_code += """
         ev.dataTransfer.setData("fromDay", ev.target.dataset.day);
         ev.dataTransfer.setData("fromGroup", ev.target.dataset.group);
         ev.dataTransfer.setData("fromPair", ev.target.dataset.pair);
-        ev.dataTransfer.setData("fromSubject", ev.target.dataset.subject);
-        ev.dataTransfer.setData("fromTeacher", ev.target.dataset.teacher);
+        ev.dataTransfer.setData("fromSubject", ev.dataTransfer.getData("subject")); // Використовуйте getData для data-атрибутів
+        ev.dataTransfer.setData("fromTeacher", ev.dataTransfer.getData("teacher")); // Використовуйте getData для data-атрибутів
     }
 
     function drop(ev, toDay, toGroup, toPair) {
@@ -430,15 +440,15 @@ html_code += """
             dropTarget.appendChild(draggedElem);
             var originalParentOfDragged = document.querySelector(`.cell[ondrop*="drop(event, ${fromDay}, ${fromGroup}, ${fromPair})"]`);
             if (originalParentOfDragged) {
-                 originalParentOfDragged.appendChild(existing);
-                 existing.dataset.day = fromDay;
-                 existing.dataset.group = fromGroup;
-                 existing.dataset.pair = fromPair;
+                originalParentOfDragged.appendChild(existing);
+                existing.dataset.day = fromDay;
+                existing.dataset.group = fromGroup;
+                existing.dataset.pair = fromPair;
             }
         } else {
             dropTarget.appendChild(draggedElem);
         }
-        
+
         draggedElem.dataset.day = toDay;
         draggedElem.dataset.group = toGroup;
         draggedElem.dataset.pair = toPair;
@@ -451,7 +461,7 @@ html_code += """
             var subject = el.dataset.subject;
             var teacher = el.dataset.teacher;
             var id = el.id;
-            updatedSchedule[`${day},${group},${pair}`] = {
+            updatedSchedule[`<span class="math-inline">\{day\},</span>{group},${pair}`] = {
                 subject: subject,
                 teacher: teacher,
                 group: el.parentNode.previousElementSibling ? el.parentNode.previousElementSibling.innerText : 'Unknown Group',
@@ -464,7 +474,6 @@ html_code += """
 """
 
 # ВАЖЛИВА ЗМІНА: Додано key="schedule_editor" до components.html
-# Це допоможе Streamlit розрізняти різні виклики компонента.
 component_value = components.html(html_code, height=800, scrolling=True, key="schedule_editor")
 
 
@@ -475,13 +484,14 @@ if isinstance(component_value, dict):
     for key_str, item in component_value.items():
         day_idx, group_idx, pair_idx = map(int, key_str.split(','))
         new_schedule_data[(day_idx, group_idx, pair_idx)] = item
-    
+
     if new_schedule_data != st.session_state.schedule_data:
         st.session_state.schedule_data = new_schedule_data
         save_schedule_to_db(db_conn, st.session_state.start_date, st.session_state.schedule_data)
-        st.experimental_rerun()
-elif component_value is not None:
-    # Це відловлює випадки, коли component_value не є None, але і не dict (наприклад, може бути пустим об'єктом Streamlit)
+        # Після збереження не обов'язково викликати rerun, оскільки зміни вже відображені через JS
+        # Якщо ви хочете, щоб сторінка оновлювалася при кожній зміні, можете розкоментувати:
+        # st.experimental_rerun()
+elif component_value is not None: # Якщо компонент повернув щось, що не є None, але і не dict
     st.warning(f"Неочікуваний тип даних від HTML-компонента: {type(component_value)}. Повинен бути 'dict'.")
 
 
