@@ -458,7 +458,7 @@ html_code += """
 </script>
 """
 
-component_value = components.html(html_code, height=800, scrolling=True, key="schedule_editor")
+component_value = components.html(html_code, height=800, scrolling=True)
 
 if component_value is not None:
     new_schedule_data = {}
