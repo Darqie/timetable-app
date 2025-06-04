@@ -15,30 +15,26 @@ st.markdown("---") # Розділювач
 # ----- Блок Опцій: Вибір тижня, Зберегти, Завантажити -----
 
 # Використовуємо st.columns для розміщення елементів в одному рядку.
-#col_label: для тексту "Перший день тижня:"
-#col_date_input: для самого st.date_input
-#col_save_btn, col_download_btn: для кнопок
-#_: для вільного простору
-# Adjusted proportions for tighter fit and alignment
 col_label, col_date_input, col_spacer_date, col_save_btn, col_download_btn, _ = st.columns([0.13, 0.15, 0.03, 0.1, 0.14, 0.45])
 
+# Ініціалізація session_state для start_date, якщо він ще не встановлений
+if 'start_date' not in st.session_state:
+    st.session_state.start_date = date(2025, 6, 2) # Початкове значення
 
 with col_label:
-    # Custom CSS for the label to remove default margins and align it
-    # Use st.write with unsafe_allow_html for precise control over CSS
     st.markdown(
         """
         <style>
         .compact-label {
             display: flex;
-            align-items: center; /* Vertically center with the date input */
-            height: 100%; /* Take full height of the column */
-            padding-top: 0px; /* Remove top padding */
-            padding-bottom: 0px; /* Remove bottom padding */
-            margin-top: 0px; /* Remove top margin */
-            margin-bottom: 0px; /* Remove bottom margin */
-            text-align: right; /* Align text to the right within its column */
-            line-height: 1; /* Adjust line height for compactness */
+            align-items: center;
+            height: 100%;
+            padding-top: 0px;
+            padding-bottom: 0px;
+            margin-top: 0px;
+            margin-bottom: 0px;
+            text-align: right;
+            line-height: 1;
         }
         </style>
         <p class="compact-label">Перший день тижня:</p>
@@ -46,28 +42,52 @@ with col_label:
         unsafe_allow_html=True
     )
 
-
 with col_date_input:
-    # st.date_input with an empty label to avoid double labels.
-    # The label "Перший день тижня:" is handled by the markdown in col_label.
-    # The default padding/margin of st.date_input itself is usually minimal.
-    start_date = st.date_input("", date(2025, 6, 2), key="start_date_picker")
+    # Використовуємо st.session_state.start_date як значення для date_input
+    selected_date = st.date_input("", st.session_state.start_date, key="manual_date_picker")
+    # Оновлюємо session_state, якщо користувач змінив дату вручну
+    if selected_date != st.session_state.start_date:
+        st.session_state.start_date = selected_date
+        st.experimental_rerun() # Перезапустити, щоб відобразити зміни
 
-# This is an empty spacer column to push buttons further right if needed, adjust its size accordingly
 with col_spacer_date:
-    st.write("") # Or a small st.empty()
+    st.write("")
 
+# Тепер end_date залежить від st.session_state.start_date
+end_date = st.session_state.start_date + timedelta(days=4)
 
-# Оскільки start_date тепер визначено в Streamlit UI, end_date може бути обчислено одразу.
-# Це вирішує потенційний NameError.
-end_date = start_date + timedelta(days=4)
+# Відображення тижня по центру
+st.markdown(f"<h3 style='text-align: center; margin-top: 5px; margin-bottom: 5px;'>📆 {st.session_state.start_date.strftime('%d.%m.%Y')} – {end_date.strftime('%d.%m.%Y')}</h3>", unsafe_allow_html=True)
 
-# Відображення тижня по центру, одразу під назвою "Розклад пар"
-# Adjusted margin-top and margin-bottom for compactness
-st.markdown(f"<h3 style='text-align: center; margin-top: 5px; margin-bottom: 5px;'>📆 {start_date.strftime('%d.%m.%Y')} – {end_date.strftime('%d.%m.%Y')}</h3>", unsafe_allow_html=True)
+# ----- Блок вибору тижнів: Минулий, Поточний, Майбутній -----
+st.markdown("<div style='display: flex; justify-content: center; gap: 10px; margin-top: 10px; margin-bottom: 15px;'>", unsafe_allow_html=True)
+
+# Функція для встановлення початку тижня (понеділок)
+def get_monday_of_week(target_date):
+    # weekday() повертає 0 для понеділка, 6 для неділі
+    days_since_monday = target_date.weekday()
+    return target_date - timedelta(days=days_since_monday)
+
+col_prev_week, col_current_week, col_next_week = st.columns([0.15, 0.15, 0.15]) # Пропорції для кнопок тижнів
+
+with col_prev_week:
+    if st.button("⏪ Минулий тиждень", key="prev_week_btn"):
+        st.session_state.start_date = get_monday_of_week(st.session_state.start_date - timedelta(weeks=1))
+        st.experimental_rerun()
+
+with col_current_week:
+    if st.button("🗓️ Поточний тиждень", key="current_week_btn"):
+        st.session_state.start_date = get_monday_of_week(date.today())
+        st.experimental_rerun()
+
+with col_next_week:
+    if st.button("⏩ Майбутній тиждень", key="next_week_btn"):
+        st.session_state.start_date = get_monday_of_week(st.session_state.start_date + timedelta(weeks=1))
+        st.experimental_rerun()
+
+st.markdown("</div>", unsafe_allow_html=True) # Закриваємо div для center alignment
 
 st.markdown("---") # Розділювач
-
 # ----- Кінець Блоку Опцій -----
 
 pairs = [
@@ -274,7 +294,7 @@ function drop(ev) {{
 
 components.html(html_code, height=800, scrolling=True)
 
-def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, num_groups_per_day):
+def generate_pdf(schedule_data, start_date_pdf, end_date_pdf, pairs_pdf, days_pdf, group_names_pdf, num_groups_per_day_pdf):
     pdf = FPDF(orientation='L', unit='mm', format='A4')
     pdf.add_page()
 
@@ -300,13 +320,13 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
         return None
 
     pdf.set_font("DejaVuSans", "B", 14)
-    pdf.cell(0, 10, txt=f"Розклад: {start_date.strftime('%d.%m.%Y')} – {end_date.strftime('%d.%m.%Y')}", ln=True, align="C")
+    pdf.cell(0, 10, txt=f"Розклад: {start_date_pdf.strftime('%d.%m.%Y')} – {end_date_pdf.strftime('%d.%m.%Y')}", ln=True, align="C")
     pdf.ln(5)
 
     page_width = pdf.w - 2 * pdf.l_margin
     day_col_width = 30
     group_col_width = 30
-    pair_col_width = (page_width - day_col_width - group_col_width) / len(pairs)
+    pair_col_width = (page_width - day_col_width - group_col_width) / len(pairs_pdf)
 
     header_height = 15
     content_cell_height = 15
@@ -323,7 +343,7 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
     pdf.cell(group_col_width, header_height, txt="Група", border=1, align="C")
 
     current_x_for_pairs = initial_x + day_col_width + group_col_width
-    for roman, time_range in pairs:
+    for roman, time_range in pairs_pdf:
         pdf.set_xy(current_x_for_pairs, initial_y)
         pdf.multi_cell(pair_col_width, header_height / 2, txt=f"{roman} ПАРА\n({time_range})", border=1, align="C")
         current_x_for_pairs += pair_col_width
@@ -332,8 +352,8 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
 
     pdf.set_font("DejaVuSans", "", 7)
 
-    for i_day, day_name in enumerate(days):
-        required_height_for_day_block = content_cell_height * num_groups_per_day
+    for i_day, day_name in enumerate(days_pdf):
+        required_height_for_day_block = content_cell_height * num_groups_per_day_pdf
 
         if pdf.get_y() + required_height_for_day_block > (pdf.h - pdf.b_margin):
             pdf.add_page()
@@ -344,7 +364,7 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
             pdf.cell(group_col_width, header_height, txt="Група", border=1, align="C")
 
             current_x_for_pairs = initial_x + day_col_width + group_col_width
-            for roman, time_range in pairs:
+            for roman, time_range in pairs_pdf:
                 pdf.set_xy(current_x_for_pairs, pdf.t_margin)
                 pdf.multi_cell(pair_col_width, header_height / 2, txt=f"{roman} ПАРА\n({time_range})", border=1, align="C")
                 current_x_for_pairs += pair_col_width
@@ -370,19 +390,19 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
         pdf.rotate(0)
         pdf.set_font("DejaVuSans", "", 7)
 
-        for i_group in range(num_groups_per_day):
+        for i_group in range(num_groups_per_day_pdf):
             current_row_start_x = initial_x + day_col_width
             current_row_start_y = day_block_start_y + (i_group * content_cell_height)
 
             pdf.set_xy(current_row_start_x, current_row_start_y)
 
             pdf.set_font("DejaVuSans", "", 8)
-            pdf.cell(group_col_width, content_cell_height, txt=group_names[i_group], border=1, align="C")
+            pdf.cell(group_col_width, content_cell_height, txt=group_names_pdf[i_group], border=1, align="C")
 
             pdf.set_xy(current_row_start_x + group_col_width, current_row_start_y)
 
             pdf.set_font("DejaVuSans", "", 7)
-            for i_pair in range(len(pairs)):
+            for i_pair in range(len(pairs_pdf)):
                 item = schedule_data[(i_day, i_group, i_pair)]
                 text = f"{item['subject']}\n{item['teacher']}"
 
@@ -398,17 +418,17 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
     return pdf.output(dest='S').encode('latin1')
 
 # Назва файлу PDF з вибраним тижнем
-pdf_file_name = f"розклад_{start_date.strftime('%d.%m')}–{end_date.strftime('%d.%m')}.pdf"
+pdf_file_name = f"розклад_{st.session_state.start_date.strftime('%d.%m')}–{end_date.strftime('%d.%m')}.pdf"
 
 # Кнопка "Зберегти" (заглушка)
 with col_save_btn:
-    # Функціональність "зберегти" поки не реалізована, це лише заглушка кнопки
     if st.button("💾 Зберегти", key="save_button"):
         st.info("Функція 'Зберегти' буде реалізована пізніше.")
 
 # Кнопка "Завантажити PDF"
 with col_download_btn:
-    pdf_bytes = generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, num_groups_per_day)
+    # Передаємо session_state.start_date до generate_pdf
+    pdf_bytes = generate_pdf(schedule_data, st.session_state.start_date, end_date, pairs, days, group_names, num_groups_per_day)
 
     if pdf_bytes:
         st.download_button(
