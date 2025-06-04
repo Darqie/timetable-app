@@ -6,7 +6,7 @@ from fpdf import FPDF
 import os
 import json
 import psycopg2
-from sqlalchemy import text # Імпортуємо text для виконання DDL-запитів через SQLAlchemy
+from sqlalchemy import text
 
 st.set_page_config(page_title="Розклад пар", layout="wide")
 
@@ -16,6 +16,7 @@ def get_db_connection():
     """Створює та кешує з'єднання з базою даних PostgreSQL та ініціалізує таблицю."""
     try:
         conn = st.connection('postgresql', type='sql')
+        
         # Ініціалізація бази даних відбувається тут, всередині кешованої функції
         # Це гарантує, що таблиця буде створена при першому отриманні з'єднання
         try:
@@ -38,23 +39,6 @@ def get_db_connection():
         st.error(f"Помилка підключення до бази даних: {e}")
         st.info("Перевірте ваш файл .streamlit/secrets.toml або налаштування секретів у Streamlit Cloud.")
         st.stop() # Зупиняємо виконання додатка, якщо немає з'єднання
-
-# Функція init_db тепер не потрібна окремо, її логіка перенесена в get_db_connection
-# def init_db(conn):
-#     """Ініціалізує базу даних, створює таблицю, якщо її немає."""
-#     try:
-#         conn.session.execute(text('''
-#             CREATE TABLE IF NOT EXISTS schedule (
-#                 week_start_date TEXT PRIMARY KEY,
-#                 data TEXT
-#             );
-#         '''))
-#         conn.session.commit()
-#         st.success("База даних ініціалізована. Таблиця 'schedule' існує або була створена.")
-#     except Exception as e:
-#         conn.session.rollback()
-#         st.error(f"Помилка при ініціалізації бази даних (створення таблиці): {e}")
-#         st.stop()
 
 
 def save_schedule_to_db(conn, week_start_date, schedule_data):
@@ -79,6 +63,12 @@ def save_schedule_to_db(conn, week_start_date, schedule_data):
         st.toast("Розклад збережено!")
     except Exception as e:
         st.error(f"Помилка при збереженні розкладу: {e}")
+        # Додаємо логіку очищення кешу та перезапуску при UndefinedTable
+        if "UndefinedTable" in str(e):
+            st.warning("Виявлено помилку UndefinedTable під час збереження. Спроба очистити кеш ресурсів і перезапустити.")
+            st.cache_resource.clear()
+            st.experimental_rerun()
+
 
 def load_schedule_from_db(conn, week_start_date):
     """Завантажує дані розкладу для конкретного тижня з бази даних.
@@ -99,6 +89,11 @@ def load_schedule_from_db(conn, week_start_date):
         return None
     except Exception as e:
         st.error(f"Помилка при завантаженні розкладу: {e}")
+        # Додаємо логіку очищення кешу та перезапуску при UndefinedTable
+        if "UndefinedTable" in str(e):
+            st.warning("Виявлено помилку UndefinedTable під час завантаження. Спроба очистити кеш ресурсів і перезапустити.")
+            st.cache_resource.clear()
+            st.experimental_rerun()
         return None
 
 
