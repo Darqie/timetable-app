@@ -10,16 +10,23 @@ st.set_page_config(page_title="Розклад пар", layout="wide")
 # Розміщення назви "Розклад пар" по центру
 st.markdown("<h2 style='text-align: center; margin-bottom: 10px;'>Розклад пар</h2>", unsafe_allow_html=True)
 
-# Вибір початку тижня - менший та зліва нагорі
-# Використовуємо st.columns, щоб контролювати позицію
-date_col, _ = st.columns([0.2, 0.8]) # 20% для дати, 80% для відступу
-with date_col:
-    start_date = st.date_input("Початок тижня", date(2025, 6, 2), key="start_date_picker", label_visibility="collapsed") # label_visibility приховує напис, щоб зменшити місце
+# ----- Блок Опцій: Вибір тижня, Зберегти, Завантажити -----
+st.markdown("---") # Розділювач для візуального відокремлення опцій
+
+# Використовуємо st.columns для розміщення елементів в одному рядку
+col_date_picker, col_save_btn, col_download_btn = st.columns([0.2, 0.15, 0.15]) # Пропорції колонок
+
+with col_date_picker:
+    # Вибір початку тижня - на самому верху як опція
+    start_date = st.date_input("Виберіть початок тижня:", date(2025, 6, 2), key="start_date_picker")
 
 end_date = start_date + timedelta(days=4)
 
 # Відображення тижня по центру, одразу під назвою "Розклад пар"
 st.markdown(f"<h3 style='text-align: center; margin-top: 0px;'>📆 {start_date.strftime('%d.%m.%Y')} – {end_date.strftime('%d.%m.%Y')}</h3>", unsafe_allow_html=True)
+
+# ----- Кінець Блоку Опцій -----
+st.markdown("---") # Розділювач
 
 pairs = [
     ("I", "8:30 – 9:50"),
@@ -246,7 +253,6 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
         return None
 
     pdf.set_font("DejaVuSans", "B", 14)
-    # Змінено: відображення тижня по центру в PDF
     pdf.cell(0, 10, txt=f"Розклад: {start_date.strftime('%d.%m.%Y')} – {end_date.strftime('%d.%m.%Y')}", ln=True, align="C")
     pdf.ln(5)
 
@@ -261,7 +267,6 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
     initial_x = pdf.l_margin 
     initial_y = pdf.get_y()
 
-    # Малюємо верхні заголовки (порожня комірка, "Група", "Пари")
     pdf.set_font("DejaVuSans", "B", 10)
     
     pdf.set_xy(initial_x, initial_y)
@@ -304,12 +309,10 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
         day_text_center_x = initial_x + day_col_width / 2
         day_text_center_y = day_block_start_y + required_height_for_day_block / 2
 
-        # Малюємо фон і рамку для блоку дня
-        pdf.set_fill_color(240, 200, 100) # Колір фону для дня (жовтуватий)
-        pdf.rect(initial_x, day_block_start_y, day_col_width, required_height_for_day_block, 'F') # Заливка фону
-        pdf.rect(initial_x, day_block_start_y, day_col_width, required_height_for_day_block, 'D') # Рамка навколо всього блоку дня
+        pdf.set_fill_color(240, 200, 100)
+        pdf.rect(initial_x, day_block_start_y, day_col_width, required_height_for_day_block, 'F')
+        pdf.rect(initial_x, day_block_start_y, day_col_width, required_height_for_day_block, 'D')
 
-        # Малюємо повернутий текст дня
         pdf.set_font("DejaVuSans", "B", 12)
         pdf.set_text_color(0, 0, 0)
         pdf.rotate(90, day_text_center_x, day_text_center_y)
@@ -347,17 +350,26 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
 
     return pdf.output(dest='S').encode('latin1')
 
-pdf_bytes = generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, num_groups_per_day)
-
 # Назва файлу PDF з вибраним тижнем
 pdf_file_name = f"розклад_{start_date.strftime('%d.%m')}–{end_date.strftime('%d.%m')}.pdf"
 
-if pdf_bytes:
-    st.download_button(
-        label="⬇️ Завантажити PDF",
-        data=pdf_bytes,
-        file_name=pdf_file_name, # Використовуємо нову назву файлу
-        mime="application/pdf"
-    )
-else:
-    st.warning("Не вдалося згенерувати PDF-файл через помилку шрифту.")
+# Кнопка "Зберегти" (заглушка)
+with col_save_btn:
+    # Функціональність "зберегти" поки не реалізована, це лише заглушка кнопки
+    if st.button("💾 Зберегти", key="save_button"):
+        st.info("Функція 'Зберегти' буде реалізована пізніше.")
+
+# Кнопка "Завантажити PDF"
+with col_download_btn:
+    pdf_bytes = generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, num_groups_per_day)
+
+    if pdf_bytes:
+        st.download_button(
+            label="⬇️ Завантажити PDF",
+            data=pdf_bytes,
+            file_name=pdf_file_name,
+            mime="application/pdf",
+            key="download_button"
+        )
+    else:
+        st.warning("Не вдалося згенерувати PDF-файл через помилку шрифту.")
