@@ -5,12 +5,8 @@ from datetime import date, timedelta
 from fpdf import FPDF
 import os
 import json
-import psycopg2 # Новий імпорт для PostgreSQL
-# from psycopg2 import sql # Цей імпорт більше не потрібен для st.connection,
-#                           оскільки st.connection абстрагує роботу з SQL.
-#                           Можна залишити, якщо ви плануєте використовувати його для інших цілей,
-#                           але для поточних функцій він не потрібен.
-from sqlalchemy import text # Додаємо для використання text() з SQLAlchemy
+import psycopg2
+from sqlalchemy import text
 
 st.set_page_config(page_title="Розклад пар", layout="wide")
 
@@ -26,7 +22,7 @@ def get_db_connection():
     except Exception as e:
         st.error(f"Помилка підключення до бази даних: {e}")
         st.info("Перевірте ваш файл .streamlit/secrets.toml або налаштування секретів у Streamlit Cloud.")
-        st.stop() # Зупиняємо виконання додатка, якщо немає з'єднання
+        st.stop()
 
 def init_db(conn):
     """Ініціалізує базу даних, створює таблицю, якщо її немає.
@@ -41,8 +37,12 @@ def init_db(conn):
             );
         '''))
         conn.session.commit() # Підтверджуємо зміни
+        st.success("База даних ініціалізована. Таблиця 'schedule' існує або була створена.") # Додано для налагодження
     except Exception as e:
-        st.error(f"Помилка при ініціалізації бази даних: {e}")
+        # Якщо виникає помилка під час створення таблиці, відкатуємо транзакцію
+        # і виводимо помилку
+        conn.session.rollback()
+        st.error(f"Помилка при ініціалізації бази даних (створення таблиці): {e}")
         st.stop() # Зупиняємо виконання, якщо не вдалося створити таблицю
 
 def save_schedule_to_db(conn, week_start_date, schedule_data):
@@ -66,9 +66,12 @@ def save_schedule_to_db(conn, week_start_date, schedule_data):
                 "data": data_json
             }
         )
-        # conn.query автоматично commit() для INSERT/UPDATE
+        # conn.query автоматично commit() для INSERT/UPDATE для більшості випадків
         st.toast("Розклад збережено!")
     except Exception as e:
+        # Важливо: якщо conn.query не робить rollback автоматично для помилок,
+        # то може знадобитися conn.session.rollback() тут.
+        # Але зазвичай Streamlit Connection обробляє це сам.
         st.error(f"Помилка при збереженні розкладу: {e}")
 
 def load_schedule_from_db(conn, week_start_date):
@@ -203,7 +206,7 @@ num_groups_per_day = 6
 group_names = [f"Група {i+1}" for i in range(num_groups_per_day)]
 
 # Ініціалізація або завантаження schedule_data
-if not st.session_state.get('schedule_data') or not st.session_state.schedule_data: # Використовуємо .get() для безпечного доступу
+if not st.session_state.get('schedule_data') or not st.session_state.schedule_data:
     initial_schedule_data = {}
     for i_day in range(len(days)):
         for i_group in range(num_groups_per_day):
@@ -392,8 +395,8 @@ html_code += """
         ev.dataTransfer.setData("fromDay", ev.target.dataset.day);
         ev.dataTransfer.setData("fromGroup", ev.target.dataset.group);
         ev.dataTransfer.setData("fromPair", ev.target.dataset.pair);
-        ev.dataTransfer.setData("fromSubject", ev.target.dataset.subject);
-        ev.dataTransfer.setData("fromTeacher", ev.target.dataset.teacher);
+        ev.dataTransfer.setData("fromSubject", ev.dataTransfer.getData("subject"));
+        ev.dataTransfer.setData("fromTeacher", ev.dataTransfer.getData("teacher"));
     }
 
     function drop(ev, toDay, toGroup, toPair) {
@@ -404,8 +407,10 @@ html_code += """
         var fromDay = parseInt(ev.dataTransfer.getData("fromDay"));
         var fromGroup = parseInt(ev.dataTransfer.getData("fromGroup"));
         var fromPair = parseInt(ev.dataTransfer.getData("fromPair"));
-        var fromSubject = ev.dataTransfer.getData("fromSubject");
-        var fromTeacher = ev.dataTransfer.getData("fromTeacher");
+        // Ці рядки можна видалити або залишити, але вони не використовуються для обміну даними
+        // var fromSubject = ev.dataTransfer.getData("fromSubject");
+        // var fromTeacher = ev.dataTransfer.getData("fromTeacher");
+
 
         var dropTarget = ev.target;
         while (!dropTarget.classList.contains("cell") || dropTarget.classList.contains("cell-header")) {
@@ -437,8 +442,8 @@ html_code += """
             var day = parseInt(el.dataset.day);
             var group = parseInt(el.dataset.group);
             var pair = parseInt(el.dataset.pair);
-            var subject = el.dataset.subject;
-            var teacher = el.dataset.teacher;
+            var subject = el.dataset.subject; // Беремо з data-атрибута
+            var teacher = el.dataset.teacher; // Беремо з data-атрибута
             var id = el.id;
             updatedSchedule[`${day},${group},${pair}`] = {
                 subject: subject,
