@@ -13,11 +13,25 @@ st.set_page_config(page_title="Розклад пар", layout="wide")
 # --- Налаштування бази даних ---
 @st.cache_resource
 def get_db_connection():
-    """Створює та кешує з'єднання з базою даних PostgreSQL."""
+    """Створює та кешує з'єднання з базою даних PostgreSQL та ініціалізує таблицю."""
     try:
         conn = st.connection('postgresql', type='sql')
-        # Спроба виконати простий запит для перевірки з'єднання
-        # conn.query("SELECT 1;") # Цей рядок можна використовувати для швидкої перевірки, але він може бути зайвим
+        # Ініціалізація бази даних відбувається тут, всередині кешованої функції
+        # Це гарантує, що таблиця буде створена при першому отриманні з'єднання
+        try:
+            conn.session.execute(text('''
+                CREATE TABLE IF NOT EXISTS schedule (
+                    week_start_date TEXT PRIMARY KEY,
+                    data TEXT
+                );
+            '''))
+            conn.session.commit()
+            st.success("База даних ініціалізована. Таблиця 'schedule' існує або була створена.")
+        except Exception as e:
+            conn.session.rollback()
+            st.error(f"Помилка при ініціалізації бази даних (створення таблиці): {e}")
+            st.stop() # Зупиняємо виконання, якщо не вдалося створити таблицю
+        
         st.success("Успішно підключено до PostgreSQL через st.connection!")
         return conn
     except Exception as e:
@@ -25,25 +39,23 @@ def get_db_connection():
         st.info("Перевірте ваш файл .streamlit/secrets.toml або налаштування секретів у Streamlit Cloud.")
         st.stop() # Зупиняємо виконання додатка, якщо немає з'єднання
 
-def init_db(conn):
-    """Ініціалізує базу даних, створює таблицю, якщо її немає.
-       Використовує conn.session.execute() для DDL."""
-    try:
-        # Використовуємо conn.session.execute() для виконання DDL (CREATE TABLE)
-        # text() потрібен для того, щоб SQLAlchemy обробляв рядок як сирий SQL
-        conn.session.execute(text('''
-            CREATE TABLE IF NOT EXISTS schedule (
-                week_start_date TEXT PRIMARY KEY,
-                data TEXT
-            );
-        '''))
-        conn.session.commit() # Підтверджуємо зміни
-        st.success("База даних ініціалізована. Таблиця 'schedule' існує або була створена.")
-    except Exception as e:
-        # Якщо виникає помилка під час створення таблиці, відкатуємо транзакцію
-        conn.session.rollback()
-        st.error(f"Помилка при ініціалізації бази даних (створення таблиці): {e}")
-        st.stop() # Зупиняємо виконання, якщо не вдалося створити таблицю
+# Функція init_db тепер не потрібна окремо, її логіка перенесена в get_db_connection
+# def init_db(conn):
+#     """Ініціалізує базу даних, створює таблицю, якщо її немає."""
+#     try:
+#         conn.session.execute(text('''
+#             CREATE TABLE IF NOT EXISTS schedule (
+#                 week_start_date TEXT PRIMARY KEY,
+#                 data TEXT
+#             );
+#         '''))
+#         conn.session.commit()
+#         st.success("База даних ініціалізована. Таблиця 'schedule' існує або була створена.")
+#     except Exception as e:
+#         conn.session.rollback()
+#         st.error(f"Помилка при ініціалізації бази даних (створення таблиці): {e}")
+#         st.stop()
+
 
 def save_schedule_to_db(conn, week_start_date, schedule_data):
     """Зберігає дані розкладу для конкретного тижня в базу даних.
@@ -57,8 +69,6 @@ def save_schedule_to_db(conn, week_start_date, schedule_data):
     data_json = json.dumps(serializable_schedule_data, ensure_ascii=False)
     
     try:
-        # Використовуємо conn.query() для INSERT/UPDATE
-        # Streamlit Connection автоматично обробляє параметри
         conn.query(
             "INSERT INTO schedule (week_start_date, data) VALUES (:week_start_date, :data) ON CONFLICT (week_start_date) DO UPDATE SET data = EXCLUDED.data;",
             params={
@@ -66,7 +76,6 @@ def save_schedule_to_db(conn, week_start_date, schedule_data):
                 "data": data_json
             }
         )
-        # conn.query автоматично commit() для INSERT/UPDATE для більшості випадків
         st.toast("Розклад збережено!")
     except Exception as e:
         st.error(f"Помилка при збереженні розкладу: {e}")
@@ -76,12 +85,11 @@ def load_schedule_from_db(conn, week_start_date):
        Використовує conn.query() для SELECT."""
     week_start_date_str = week_start_date.strftime('%Y-%m-%d')
     try:
-        # conn.query() повертає DataFrame за замовчуванням
         df = conn.query("SELECT data FROM schedule WHERE week_start_date = :week_start_date;",
                         params={"week_start_date": week_start_date_str})
         
         if not df.empty:
-            loaded_data_json = df.iloc[0]['data'] # Беремо дані з першого рядка
+            loaded_data_json = df.iloc[0]['data']
             deserialized_data = json.loads(loaded_data_json)
             schedule_data = {}
             for key_str, item in deserialized_data.items():
@@ -91,15 +99,12 @@ def load_schedule_from_db(conn, week_start_date):
         return None
     except Exception as e:
         st.error(f"Помилка при завантаженні розкладу: {e}")
-        # Ця помилка "UndefinedTable" свідчить про те, що таблиця не існує.
-        # Це очікувана поведінка при першому запуску, якщо таблиці ще немає.
-        # Ми можемо повернути None і дозволити ініціалізації створити її.
         return None
 
 
-# Отримання з'єднання з базою даних
+# Отримання з'єднання з базою даних. Тепер це включає ініціалізацію таблиці.
 db_conn = get_db_connection()
-init_db(db_conn) # Ініціалізація бази даних при старті додатка
+
 
 # Розміщення назви "Розклад пар" по центру
 st.markdown("<h2 style='text-align: center; margin-bottom: 10px;'>Розклад пар</h2>", unsafe_allow_html=True)
@@ -363,8 +368,6 @@ for i_day, day_name in enumerate(days):
             })
             item_id = item.get('id', str(uuid.uuid4()))
             
-            # Екранування даних для HTML атрибутів, щоб уникнути проблем з лапками
-            # Додаємо replace для лапок, щоб не ламався HTML/JS
             escaped_subject = item["subject"].replace('"', '&quot;')
             escaped_teacher = item["teacher"].replace('"', '&quot;')
 
@@ -401,7 +404,6 @@ html_code += """
         ev.dataTransfer.setData("fromDay", ev.target.dataset.day);
         ev.dataTransfer.setData("fromGroup", ev.target.dataset.group);
         ev.dataTransfer.setData("fromPair", ev.target.dataset.pair);
-        // Тут ми вже беремо з dataset, як і має бути
         ev.dataTransfer.setData("fromSubject", ev.target.dataset.subject);
         ev.dataTransfer.setData("fromTeacher", ev.target.dataset.teacher);
     }
@@ -414,10 +416,6 @@ html_code += """
         var fromDay = parseInt(ev.dataTransfer.getData("fromDay"));
         var fromGroup = parseInt(ev.dataTransfer.getData("fromGroup"));
         var fromPair = parseInt(ev.dataTransfer.getData("fromPair"));
-        // Ці змінні (fromSubject, fromTeacher) більше не використовуються для обміну,
-        // оскільки ми беремо їх з draggedElem.dataset після переміщення
-        // var fromSubject = ev.dataTransfer.getData("fromSubject");
-        // var fromTeacher = ev.dataTransfer.getData("fromTeacher");
 
         var dropTarget = ev.target;
         while (!dropTarget.classList.contains("cell") || dropTarget.classList.contains("cell-header")) {
@@ -428,22 +426,18 @@ html_code += """
         var existing = dropTarget.querySelector(".draggable");
 
         if (existing) {
-            // Swap logic
-            dropTarget.appendChild(draggedElem); // Place dragged item into new cell
+            dropTarget.appendChild(draggedElem);
             var originalParentOfDragged = document.querySelector(`.cell[ondrop*="drop(event, ${fromDay}, ${fromGroup}, ${fromPair})"]`);
             if (originalParentOfDragged) {
-                 originalParentOfDragged.appendChild(existing); // Place existing item into original cell
-                 // Update dataset for swapped item
+                 originalParentOfDragged.appendChild(existing);
                  existing.dataset.day = fromDay;
                  existing.dataset.group = fromGroup;
                  existing.dataset.pair = fromPair;
             }
         } else {
-            // Just move logic
             dropTarget.appendChild(draggedElem);
         }
         
-        // Update dataset for the dragged item
         draggedElem.dataset.day = toDay;
         draggedElem.dataset.group = toGroup;
         draggedElem.dataset.pair = toPair;
@@ -453,8 +447,8 @@ html_code += """
             var day = parseInt(el.dataset.day);
             var group = parseInt(el.dataset.group);
             var pair = parseInt(el.dataset.pair);
-            var subject = el.dataset.subject; // Беремо з data-атрибута елемента
-            var teacher = el.dataset.teacher; // Беремо з data-атрибута елемента
+            var subject = el.dataset.subject;
+            var teacher = el.dataset.teacher;
             var id = el.id;
             updatedSchedule[`${day},${group},${pair}`] = {
                 subject: subject,
@@ -468,11 +462,10 @@ html_code += """
 </script>
 """
 
-# Видалено 'key' з components.html, як було виправлено
 component_value = components.html(html_code, height=800, scrolling=True)
 
-# Додано перевірку типу для component_value, щоб уникнути помилки StreamlitAPIException
-# та "Неочікуваний тип даних від HTML-компонента: <class 'streamlit.delta_generator.DeltaGenerator'>"
+# Перевірка, чи повернув компонент словник.
+# До першої взаємодії component_value може бути не словником.
 if isinstance(component_value, dict):
     new_schedule_data = {}
     for key_str, item in component_value.items():
@@ -483,8 +476,6 @@ if isinstance(component_value, dict):
         st.session_state.schedule_data = new_schedule_data
         save_schedule_to_db(db_conn, st.session_state.start_date, st.session_state.schedule_data)
         st.experimental_rerun()
-# Якщо component_value не є словником, код просто пропустить обробку.
-# Це нормально при початковому завантаженні, коли компонент ще не надіслав дані.
 
 
 def generate_pdf(schedule_data_pdf, start_date_pdf, end_date_pdf, pairs_pdf, days_pdf, group_names_pdf, num_groups_per_day_pdf):
