@@ -19,7 +19,7 @@ col_label, col_date_input, col_spacer_date, col_save_btn, col_download_btn, _ = 
 
 # Ініціалізація session_state для start_date, якщо він ще не встановлений
 if 'start_date' not in st.session_state:
-    st.session_state.start_date = date(2025, 6, 2) # Початкове значення
+    st.session_state.start_date = date(2025, 6, 2) # Або date.today(), якщо хочете поточну дату як стартову
 
 with col_label:
     st.markdown(
@@ -43,7 +43,6 @@ with col_label:
     )
 
 with col_date_input:
-    # Використовуємо st.session_state.start_date як значення для date_input
     selected_date = st.date_input("", st.session_state.start_date, key="manual_date_picker")
     # Оновлюємо session_state, якщо користувач змінив дату вручну
     if selected_date != st.session_state.start_date:
@@ -51,7 +50,7 @@ with col_date_input:
         st.experimental_rerun() # Перезапустити, щоб відобразити зміни
 
 with col_spacer_date:
-    st.write("")
+    st.write("") # Порожній спейсер
 
 # Тепер end_date залежить від st.session_state.start_date
 end_date = st.session_state.start_date + timedelta(days=4)
@@ -60,15 +59,14 @@ end_date = st.session_state.start_date + timedelta(days=4)
 st.markdown(f"<h3 style='text-align: center; margin-top: 5px; margin-bottom: 5px;'>📆 {st.session_state.start_date.strftime('%d.%m.%Y')} – {end_date.strftime('%d.%m.%Y')}</h3>", unsafe_allow_html=True)
 
 # ----- Блок вибору тижнів: Минулий, Поточний, Майбутній -----
-st.markdown("<div style='display: flex; justify-content: center; gap: 10px; margin-top: 10px; margin-bottom: 15px;'>", unsafe_allow_html=True)
+# Вирівнюємо кнопки по центру, використовуючи порожні колонки
+spacer_left, col_prev_week, col_current_week, col_next_week, spacer_right = st.columns([1, 0.25, 0.25, 0.25, 1]) # Пропорції для центрування
 
 # Функція для встановлення початку тижня (понеділок)
 def get_monday_of_week(target_date):
     # weekday() повертає 0 для понеділка, 6 для неділі
     days_since_monday = target_date.weekday()
     return target_date - timedelta(days=days_since_monday)
-
-col_prev_week, col_current_week, col_next_week = st.columns([0.15, 0.15, 0.15]) # Пропорції для кнопок тижнів
 
 with col_prev_week:
     if st.button("⏪ Минулий тиждень", key="prev_week_btn"):
@@ -77,15 +75,13 @@ with col_prev_week:
 
 with col_current_week:
     if st.button("🗓️ Поточний тиждень", key="current_week_btn"):
-        st.session_state.start_date = get_monday_of_week(date.today())
+        st.session_state.start_date = get_monday_of_week(date.today()) # Завжди повертаємося до понеділка поточного тижня
         st.experimental_rerun()
 
 with col_next_week:
     if st.button("⏩ Майбутній тиждень", key="next_week_btn"):
         st.session_state.start_date = get_monday_of_week(st.session_state.start_date + timedelta(weeks=1))
         st.experimental_rerun()
-
-st.markdown("</div>", unsafe_allow_html=True) # Закриваємо div для center alignment
 
 st.markdown("---") # Розділювач
 # ----- Кінець Блоку Опцій -----
