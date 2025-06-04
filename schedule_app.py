@@ -147,9 +147,23 @@ components.html(html_code, height=820, scrolling=True)
 if st.button("⬇️ Завантажити PDF"):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", size=12)
+
+    # Шлях до файлу шрифту (відносно кореня вашого додатку)
+    # Переконайтеся, що шлях правильний згідно з розміщенням файлу шрифту
+    font_path = "fonts/DejaVuSans.ttf"
+
+    try:
+        # Додаємо шрифт. 'True' дозволяє використовувати Unicode.
+        pdf.add_font("DejaVuSans", "", font_path, uni=True)
+        # Встановлюємо доданий шрифт
+        pdf.set_font("DejaVuSans", size=12)
+    except Exception as e:
+        st.error(f"Помилка завантаження шрифту: {e}. Переконайтеся, що файл {font_path} існує і доступний.")
+        st.stop() # Зупинити виконання, якщо шрифт не завантажився
+
+
     pdf.cell(200, 10, txt=f"Розклад: {start_date.strftime('%d.%m.%Y')} – {end_date.strftime('%d.%m.%Y')}", ln=True, align="C")
-    
+
     for i, (roman, time_range) in enumerate(pairs):
         pdf.cell(0, 10, txt=f"{roman} ({time_range})", ln=True)
         for j, day in enumerate(days):
@@ -158,6 +172,9 @@ if st.button("⬇️ Завантажити PDF"):
             pdf.cell(0, 10, txt=text, ln=True)
         pdf.ln(2)
 
-    pdf.output("розклад.pdf")
-    with open("розклад.pdf", "rb") as f:
-        st.download_button("📄 Завантажити PDF-файл", data=f, file_name="розклад.pdf", mime="application/pdf")
+    # Зберігаємо файл
+    pdf_output_filename = "розклад.pdf"
+    pdf.output(pdf_output_filename)
+
+    with open(pdf_output_filename, "rb") as f:
+        st.download_button("📄 Завантажити PDF-файл", data=f, file_name=pdf_output_filename, mime="application/pdf")
