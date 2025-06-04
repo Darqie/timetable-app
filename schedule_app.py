@@ -239,63 +239,100 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
     pair_col_width = (page_width - day_col_width - group_col_width) / len(pairs)
 
     header_height = 15
-    content_cell_height = 15
+    content_cell_height = 15 # Висота рядка для однієї групи
 
     initial_x = pdf.l_margin 
     initial_y = pdf.get_y()
 
+    # Малюємо верхні заголовки (порожня комірка, "Група", "Пари")
     pdf.set_font("DejaVuSans", "B", 10)
     
+    # Верхній лівий кут (порожній)
     pdf.set_xy(initial_x, initial_y)
     pdf.cell(day_col_width, header_height, txt="", border=1, align="C")
 
+    # Заголовок "Група"
     pdf.set_xy(initial_x + day_col_width, initial_y)
     pdf.cell(group_col_width, header_height, txt="Група", border=1, align="C")
 
+    # Заголовки пар
     current_x_for_pairs = initial_x + day_col_width + group_col_width
     for roman, time_range in pairs:
         pdf.set_xy(current_x_for_pairs, initial_y)
         pdf.multi_cell(pair_col_width, header_height / 2, txt=f"{roman} ПАРА\n({time_range})", border=1, align="C")
         current_x_for_pairs += pair_col_width
     
-    # Виправлений відступ тут
+    # Переходимо на новий рядок після верхніх заголовків
     pdf.set_xy(initial_x, initial_y + header_height)
 
+    # Основний контент таблиці
     pdf.set_font("DejaVuSans", "", 7)
     
     for i_day, day_name in enumerate(days):
-        day_block_start_y = pdf.get_y()
-        
-        pdf.set_font("DejaVuSans", "B", 9)
-        pdf.set_xy(initial_x, day_block_start_y)
-        pdf.cell(day_col_width, content_cell_height * num_groups_per_day, txt=day_name, border=1, align="C")
-        
-        pdf.set_xy(initial_x + day_col_width, day_block_start_y)
-
-        for i_group in range(num_groups_per_day):
-            group_current_x = pdf.get_x()
-            group_current_y = pdf.get_y()
+        # Перевіряємо, чи вміститься блок дня на поточній сторінці
+        # Якщо висота, необхідна для дня, перевищує залишок сторінки, додаємо нову сторінку
+        if pdf.get_y() + (content_cell_height * num_groups_per_day) > (pdf.h - pdf.b_margin):
+            pdf.add_page()
+            # Перемальовуємо верхні заголовки на новій сторінці
+            pdf.set_font("DejaVuSans", "B", 10)
+            pdf.set_xy(initial_x, pdf.t_margin)
+            pdf.cell(day_col_width, header_height, txt="", border=1, align="C")
+            pdf.set_xy(initial_x + day_col_width, pdf.t_margin)
+            pdf.cell(group_col_width, header_height, txt="Група", border=1, align="C")
             
+            current_x_for_pairs = initial_x + day_col_width + group_col_width
+            for roman, time_range in pairs:
+                pdf.set_xy(current_x_for_pairs, pdf.t_margin)
+                pdf.multi_cell(pair_col_width, header_height / 2, txt=f"{roman} ПАРА\n({time_range})", border=1, align="C")
+                current_x_for_pairs += pair_col_width
+            pdf.set_xy(initial_x, pdf.t_margin + header_height)
+            pdf.set_font("DejaVuSans", "", 7) # Повертаємо основний шрифт для контенту
+
+        day_block_start_y = pdf.get_y() # Зберігаємо Y на початку блоку цього дня
+
+        # Малюємо заголовок дня та комірки груп/пар
+        for i_group in range(num_groups_per_day):
+            current_row_start_x = pdf.get_x() # Зазвичай це initial_x
+            current_row_start_y = pdf.get_y() # Зазвичай це day_block_start_y для першої групи, потім збільшується
+
+            # Комірка для дня (малюється лише для першої групи дня, а потім "порожні" комірки для наступних груп)
+            pdf.set_font("DejaVuSans", "B", 9)
+            if i_group == 0: # Якщо це перша група для цього дня, малюємо заголовок дня
+                pdf.cell(day_col_width, content_cell_height * num_groups_per_day, txt=day_name, border=1, align="C")
+            else: # Для наступних груп дня, просто малюємо порожню комірку, щоб зберегти стовпець
+                pdf.cell(day_col_width, content_cell_height, txt="", border=1, align="C")
+            
+            # Повертаємо курсор на початок стовпця "Група" для поточного рядка
+            pdf.set_xy(initial_x + day_col_width, current_row_start_y)
+
+            # Заголовок групи
             pdf.set_font("DejaVuSans", "", 8)
             pdf.cell(group_col_width, content_cell_height, txt=group_names[i_group], border=1, align="C")
             
-            pdf.set_xy(group_current_x + group_col_width, group_current_y)
+            # Переміщуємо курсор на початок стовпців з даними
+            pdf.set_xy(initial_x + day_col_width + group_col_width, current_row_start_y)
 
+            # Клітинки з вмістом для кожної пари
+            pdf.set_font("DejaVuSans", "", 7) # Шрифт для вмісту
             for i_pair in range(len(pairs)):
                 item = schedule_data[(i_day, i_group, i_pair)]
                 text = f"{item['subject']}\n{item['teacher']}"
 
-                current_x_content_cell = pdf.get_x()
-                current_y_content_cell = pdf.get_y()
+                # Зберігаємо позицію перед multi_cell, щоб потім повернутися
+                cell_start_x = pdf.get_x()
+                cell_start_y = pdf.get_y()
 
                 pdf.multi_cell(pair_col_width, content_cell_height / 2, txt=text, border=1, align="C")
                 
-                pdf.set_xy(current_x_content_cell + pair_col_width, current_y_content_cell)
+                # Повертаємо курсор на X-позицію для наступної комірки в тому ж рядку
+                # та на Y-позицію, з якої починалася поточна комірка
+                pdf.set_xy(cell_start_x + pair_col_width, cell_start_y)
             
-            pdf.set_xy(initial_x + day_col_width, group_current_y + content_cell_height)
-
-        pdf.set_xy(initial_x, day_block_start_y + (content_cell_height * num_groups_per_day))
-
+            # Після заповнення всіх пар для поточної групи, переходимо на новий рядок для наступної групи.
+            # Курсор вже знаходиться в кінці поточного рядка. Просто переходимо на наступний рядок
+            # на початковій X-позиції для стовпця дня.
+            pdf.set_xy(initial_x, current_row_start_y + content_cell_height)
+        
     return pdf.output(dest='S').encode('latin1')
 
 pdf_bytes = generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, num_groups_per_day)
