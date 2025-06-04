@@ -44,3 +44,61 @@ html_code = """
     align-items: center;
 }
 .draggable {
+    background: #d0e7ff;
+    border-radius: 5px;
+    padding: 6px;
+    margin-top: 5px;
+    cursor: grab;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+}
+</style>
+
+<div class="timetable">
+    <div class="cell cell-header"></div>
+"""
+
+# Заголовки днів
+for day in days:
+    html_code += f'<div class="cell cell-header">{day}</div>'
+
+# Рядки з уроками
+for i, lesson in enumerate(lessons):
+    html_code += f'<div class="cell cell-header">{lesson}</div>'
+    for j, day in enumerate(days):
+        item = schedule_data[(i, j)]
+        html_code += f'''
+        <div class="cell" ondrop="drop(event)" ondragover="allowDrop(event)">
+            <div id="{item['id']}" class="draggable" draggable="true" ondragstart="drag(event)">
+                <strong>{item["subject"]}</strong><br>
+                {item["teacher"]}<br>
+                {item["group"]}
+            </div>
+        </div>
+        '''
+
+html_code += "</div>"
+
+# JavaScript
+html_code += """
+<script>
+function allowDrop(ev) {
+  ev.preventDefault();
+}
+function drag(ev) {
+  ev.dataTransfer.setData("text", ev.target.id);
+}
+function drop(ev) {
+  ev.preventDefault();
+  var data = ev.dataTransfer.getData("text");
+  var element = document.getElementById(data);
+  if (ev.target.classList.contains("cell")) {
+    ev.target.appendChild(element);
+  } else if (ev.target.classList.contains("draggable")) {
+    ev.target.parentNode.appendChild(element);
+  }
+}
+</script>
+"""
+
+# Вивід у Streamlit
+components.html(html_code, height=800, scrolling=True)
