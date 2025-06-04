@@ -482,10 +482,9 @@ if component_value is not None and isinstance(component_value, dict):
         st.session_state.schedule_data = new_schedule_data
         save_schedule_to_db(db_conn, st.session_state.start_date, st.session_state.schedule_data)
         st.experimental_rerun()
-elif component_value is None:
-    st.info("HTML-компонент ще не повернув дані. Спробуйте взаємодіяти з розкладом.")
-else:
-    st.error(f"Неочікуваний тип даних від HTML-компонента: {type(component_value)}. Повинно бути 'dict'.")
+# else: # Закоментуйте або видаліть цей else блок, щоб уникнути помилки DeltaGenerator, якщо компонент ще не повернув дані
+#     st.info("HTML-компонент ще не повернув дані або повернув неочікуваний тип.") # Додано для налагодження
+#     st.error(f"Неочікуваний тип даних від HTML-компонента: {type(component_value)}. Повинно бути 'dict'.")
 
 
 def generate_pdf(schedule_data_pdf, start_date_pdf, end_date_pdf, pairs_pdf, days_pdf, group_names_pdf, num_groups_per_day_pdf):
