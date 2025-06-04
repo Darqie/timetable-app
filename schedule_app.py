@@ -395,8 +395,9 @@ html_code += """
         ev.dataTransfer.setData("fromDay", ev.target.dataset.day);
         ev.dataTransfer.setData("fromGroup", ev.target.dataset.group);
         ev.dataTransfer.setData("fromPair", ev.target.dataset.pair);
-        ev.dataTransfer.setData("fromSubject", ev.dataTransfer.getData("subject"));
-        ev.dataTransfer.setData("fromTeacher", ev.dataTransfer.getData("teacher"));
+        // Ось ці рядки потрібно перевірити:
+        ev.dataTransfer.setData("fromSubject", ev.target.dataset.subject); // Повинно бути ev.target.dataset.subject
+        ev.dataTransfer.setData("fromTeacher", ev.target.dataset.teacher); // Повинно бути ev.target.dataset.teacher
     }
 
     function drop(ev, toDay, toGroup, toPair) {
