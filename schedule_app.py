@@ -4,8 +4,65 @@ import uuid
 from datetime import date, timedelta
 from fpdf import FPDF
 import os
+import sqlite3
+import json
 
 st.set_page_config(page_title="Розклад пар", layout="wide")
+
+# --- Налаштування бази даних ---
+DATABASE_NAME = "schedule.db"
+
+def init_db():
+    """Ініціалізує базу даних, створює таблицю, якщо її немає."""
+    with sqlite3.connect(DATABASE_NAME) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS schedule (
+                week_start_date TEXT PRIMARY KEY,
+                data TEXT
+            )
+        ''')
+        conn.commit()
+
+def save_schedule_to_db(week_start_date, schedule_data):
+    """Зберігає дані розкладу для конкретного тижня в базу даних."""
+    week_start_date_str = week_start_date.strftime('%Y-%m-%d')
+    # Перетворюємо schedule_data у формат, який можна зберегти в JSON
+    serializable_schedule_data = {}
+    for (day_idx, group_idx, pair_idx), item in schedule_data.items():
+        key_str = f"{day_idx},{group_idx},{pair_idx}"
+        serializable_schedule_data[key_str] = item
+
+    data_json = json.dumps(serializable_schedule_data, ensure_ascii=False)
+    with sqlite3.connect(DATABASE_NAME) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO schedule (week_start_date, data)
+            VALUES (?, ?)
+        ''', (week_start_date_str, data_json))
+        conn.commit()
+    st.toast("Розклад збережено!") # Додано сповіщення про збереження
+
+def load_schedule_from_db(week_start_date):
+    """Завантажує дані розкладу для конкретного тижня з бази даних."""
+    week_start_date_str = week_start_date.strftime('%Y-%m-%d')
+    with sqlite3.connect(DATABASE_NAME) as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT data FROM schedule WHERE week_start_date = ?', (week_start_date_str,))
+        result = cursor.fetchone()
+        if result:
+            loaded_data_json = result[0]
+            deserialized_data = json.loads(loaded_data_json)
+            # Перетворюємо ключі назад у кортежі
+            schedule_data = {}
+            for key_str, item in deserialized_data.items():
+                day_idx, group_idx, pair_idx = map(int, key_str.split(','))
+                schedule_data[(day_idx, group_idx, pair_idx)] = item
+            return schedule_data
+        return None
+
+# Ініціалізація бази даних при старті додатку
+init_db()
 
 # Розміщення назви "Розклад пар" по центру
 st.markdown("<h2 style='text-align: center; margin-bottom: 10px;'>Розклад пар</h2>", unsafe_allow_html=True)
@@ -14,12 +71,16 @@ st.markdown("---") # Розділювач
 
 # ----- Блок Опцій: Вибір тижня, Зберегти, Завантажити -----
 
-# Використовуємо st.columns для розміщення елементів в одному рядку.
 col_label, col_date_input, col_spacer_date, col_save_btn, col_download_btn, _ = st.columns([0.13, 0.15, 0.03, 0.1, 0.14, 0.45])
 
-# Ініціалізація session_state для start_date, якщо він ще не встановлений
 if 'start_date' not in st.session_state:
     st.session_state.start_date = date(2025, 6, 2) # Або date.today(), якщо хочете поточну дату як стартову
+    # При першому запуску спробувати завантажити або ініціалізувати
+    initial_load = load_schedule_from_db(st.session_state.start_date)
+    if initial_load:
+        st.session_state.schedule_data = initial_load
+    else:
+        st.session_state.schedule_data = {} # Буде заповнено стандартними даними нижче
 
 with col_label:
     st.markdown(
@@ -44,43 +105,55 @@ with col_label:
 
 with col_date_input:
     selected_date = st.date_input("", st.session_state.start_date, key="manual_date_picker")
-    # Оновлюємо session_state, якщо користувач змінив дату вручну
     if selected_date != st.session_state.start_date:
         st.session_state.start_date = selected_date
-        st.experimental_rerun() # Перезапустити, щоб відобразити зміни
+        # При зміні дати завантажуємо розклад з бази даних або ініціалізуємо новий
+        loaded_data = load_schedule_from_db(st.session_state.start_date)
+        if loaded_data:
+            st.session_state.schedule_data = loaded_data
+        else:
+            # Якщо даних для цього тижня немає, ініціалізуємо порожній розклад
+            st.session_state.schedule_data = {}
+        st.experimental_rerun()
 
-with col_spacer_date:
-    st.write("") # Порожній спейсер
-
-# Тепер end_date залежить від st.session_state.start_date
 end_date = st.session_state.start_date + timedelta(days=4)
-
-# Відображення тижня по центру
 st.markdown(f"<h3 style='text-align: center; margin-top: 5px; margin-bottom: 5px;'>📆 {st.session_state.start_date.strftime('%d.%m.%Y')} – {end_date.strftime('%d.%m.%Y')}</h3>", unsafe_allow_html=True)
 
 # ----- Блок вибору тижнів: Минулий, Поточний, Майбутній -----
-# Вирівнюємо кнопки по центру, використовуючи порожні колонки
-spacer_left, col_prev_week, col_current_week, col_next_week, spacer_right = st.columns([1, 0.25, 0.25, 0.25, 1]) # Пропорції для центрування
+spacer_left, col_prev_week, col_current_week, col_next_week, spacer_right = st.columns([1, 0.25, 0.25, 0.25, 1])
 
-# Функція для встановлення початку тижня (понеділок)
 def get_monday_of_week(target_date):
-    # weekday() повертає 0 для понеділка, 6 для неділі
     days_since_monday = target_date.weekday()
     return target_date - timedelta(days=days_since_monday)
 
 with col_prev_week:
     if st.button("⏪ Минулий тиждень", key="prev_week_btn"):
         st.session_state.start_date = get_monday_of_week(st.session_state.start_date - timedelta(weeks=1))
+        loaded_data = load_schedule_from_db(st.session_state.start_date)
+        if loaded_data:
+            st.session_state.schedule_data = loaded_data
+        else:
+            st.session_state.schedule_data = {}
         st.experimental_rerun()
 
 with col_current_week:
     if st.button("🗓️ Поточний тиждень", key="current_week_btn"):
-        st.session_state.start_date = get_monday_of_week(date.today()) # Завжди повертаємося до понеділка поточного тижня
+        st.session_state.start_date = get_monday_of_week(date.today())
+        loaded_data = load_schedule_from_db(st.session_state.start_date)
+        if loaded_data:
+            st.session_state.schedule_data = loaded_data
+        else:
+            st.session_state.schedule_date = {}
         st.experimental_rerun()
 
 with col_next_week:
     if st.button("⏩ Майбутній тиждень", key="next_week_btn"):
         st.session_state.start_date = get_monday_of_week(st.session_state.start_date + timedelta(weeks=1))
+        loaded_data = load_schedule_from_db(st.session_state.start_date)
+        if loaded_data:
+            st.session_state.schedule_data = loaded_data
+        else:
+            st.session_state.schedule_data = {}
         st.experimental_rerun()
 
 st.markdown("---") # Розділювач
@@ -96,20 +169,28 @@ pairs = [
 
 days = ["Понеділок", "Вівторок", "Середа", "Четвер", "П’ятниця"]
 num_groups_per_day = 6
-
 group_names = [f"Група {i+1}" for i in range(num_groups_per_day)]
 
-schedule_data = {}
-for i_day in range(len(days)):
-    for i_group in range(num_groups_per_day):
-        for i_pair in range(len(pairs)):
-            key = (i_day, i_group, i_pair)
-            schedule_data[key] = {
-                "teacher": f"Вч.{chr(65 + i_day)}.{i_group+1}.{i_pair+1}",
-                "group": group_names[i_group],
-                "subject": f"Предм.{i_pair+1}-{i_group+1}",
-                "id": str(uuid.uuid4())
-            }
+# Ініціалізація або завантаження schedule_data
+if 'schedule_data' not in st.session_state or not st.session_state.schedule_data:
+    # Це початкові дані, якщо для поточного тижня в базі нічого немає
+    initial_schedule_data = {}
+    for i_day in range(len(days)):
+        for i_group in range(num_groups_per_day):
+            for i_pair in range(len(pairs)):
+                key = (i_day, i_group, i_pair)
+                initial_schedule_data[key] = {
+                    "teacher": f"Вч.{chr(65 + i_day)}.{i_group+1}.{i_pair+1}",
+                    "group": group_names[i_group],
+                    "subject": f"Предм.{i_pair+1}-{i_group+1}",
+                    "id": str(uuid.uuid4())
+                }
+    st.session_state.schedule_data = initial_schedule_data # Заповнюємо, якщо порожньо
+    # Автоматично зберігаємо щойно ініціалізований розклад
+    save_schedule_to_db(st.session_state.start_date, st.session_state.schedule_data)
+
+# Отримуємо поточні дані розкладу для відображення
+current_schedule_data = st.session_state.schedule_data
 
 html_code = f"""
 <style>
@@ -244,10 +325,17 @@ for i_day, day_name in enumerate(days):
         html_code += f'<div class="cell group-sub-header">{group_names[i_group]}</div>'
 
         for i_pair in range(len(pairs)):
-            item = schedule_data[(i_day, i_group, i_pair)]
+            # Беремо дані з st.session_state.schedule_data
+            item = current_schedule_data.get((i_day, i_group, i_pair), {
+                "teacher": "Немає", "group": group_names[i_group], "subject": "Пусто", "id": str(uuid.uuid4())
+            })
+            # Передаємо додаткові data-атрибути для JS
             html_code += f'''
-            <div class="cell" ondrop="drop(event)" ondragover="allowDrop(event)">
-                <div id="{item['id']}" class="draggable" draggable="true" ondragstart="drag(event)">
+            <div class="cell" ondrop="drop(event, {i_day}, {i_group}, {i_pair})" ondragover="allowDrop(event)">
+                <div id="{item['id']}" class="draggable" draggable="true"
+                     data-day="{i_day}" data-group="{i_group}" data-pair="{i_pair}"
+                     data-subject="{item['subject']}" data-teacher="{item['teacher']}"
+                     ondragstart="drag(event)">
                     <strong>{item["subject"]}</strong><br>
                     {item["teacher"]}
                 </div>
@@ -258,39 +346,111 @@ html_code += """
 </div>
 
 <script>
-function allowDrop(ev) {{
-    ev.preventDefault();
-}}
-function drag(ev) {{
-    ev.dataTransfer.setData("text", ev.target.id);
-}}
-function drop(ev) {{
-    ev.preventDefault();
-    var draggedId = ev.dataTransfer.getData("text");
-    var draggedElem = document.getElementById(draggedId);
+    // Функція для надсилання даних до Streamlit
+    function sendDataToStreamlit(data) {
+        if (window.parent && window.parent.streamlit) {
+            window.parent.streamlit.setComponentValue(data);
+        } else {
+            console.warn("Streamlit parent not found. Data not sent.");
+        }
+    }
 
-    var dropTarget = ev.target;
-    while (!dropTarget.classList.contains("cell") || dropTarget.classList.contains("cell-header")) {{
-        dropTarget = dropTarget.parentNode;
-        if (!dropTarget) return;
-    }}
+    function allowDrop(ev) {
+        ev.preventDefault();
+    }
 
-    var existing = dropTarget.querySelector(".draggable");
-    var parentOfDragged = draggedElem.parentNode;
+    function drag(ev) {
+        ev.dataTransfer.setData("text", ev.target.id);
+        // Зберігаємо вихідні координати елемента, що перетягується
+        ev.dataTransfer.setData("fromDay", ev.target.dataset.day);
+        ev.dataTransfer.setData("fromGroup", ev.target.dataset.group);
+        ev.dataTransfer.setData("fromPair", ev.target.dataset.pair);
+    }
 
-    if (existing) {{
-        dropTarget.appendChild(draggedElem);
-        parentOfDragged.appendChild(existing);
-    }} else {{
-        dropTarget.appendChild(draggedElem);
-    }}
-}}
+    function drop(ev, toDay, toGroup, toPair) {
+        ev.preventDefault();
+        var draggedId = ev.dataTransfer.getData("text");
+        var draggedElem = document.getElementById(draggedId);
+
+        var fromDay = parseInt(ev.dataTransfer.getData("fromDay"));
+        var fromGroup = parseInt(ev.dataTransfer.getData("fromGroup"));
+        var fromPair = parseInt(ev.dataTransfer.getData("fromPair"));
+
+        var dropTarget = ev.target;
+        while (!dropTarget.classList.contains("cell") || dropTarget.classList.contains("cell-header")) {
+            dropTarget = dropTarget.parentNode;
+            if (!dropTarget) return; // Запобігти помилці, якщо dropTarget стане null
+        }
+
+        var existing = dropTarget.querySelector(".draggable");
+        var parentOfDragged = draggedElem.parentNode;
+
+        // Визначаємо id та дані елемента, який залишиться у вихідній комірці (якщо є)
+        var existingId = existing ? existing.id : null;
+        var existingSubject = existing ? existing.dataset.subject : null;
+        var existingTeacher = existing ? existing.dataset.teacher : null;
+
+        // Оновлюємо візуальне відображення
+        if (existing) {
+            dropTarget.appendChild(draggedElem);
+            parentOfDragged.appendChild(existing);
+        } else {
+            dropTarget.appendChild(draggedElem);
+        }
+
+        // Оновлюємо data-атрибути для перетягнутого елемента
+        draggedElem.dataset.day = toDay;
+        draggedElem.dataset.group = toGroup;
+        draggedElem.dataset.pair = toPair;
+
+        // Якщо відбувся обмін, оновлюємо data-атрибути для обміняного елемента
+        if (existing) {
+            existing.dataset.day = fromDay;
+            existing.dataset.group = fromGroup;
+            existing.dataset.pair = fromPair;
+        }
+
+        // Збираємо дані для надсилання до Streamlit
+        var updatedSchedule = {};
+        document.querySelectorAll('.draggable').forEach(function(el) {
+            var day = parseInt(el.dataset.day);
+            var group = parseInt(el.dataset.group);
+            var pair = parseInt(el.dataset.pair);
+            var subject = el.dataset.subject;
+            var teacher = el.dataset.teacher;
+            var id = el.id;
+            updatedSchedule[`${day},${group},${pair}`] = {
+                subject: subject,
+                teacher: teacher,
+                group: el.parentNode.previousElementSibling.innerText, // Зберігаємо ім'я групи з HTML
+                id: id
+            };
+        });
+        sendDataToStreamlit(updatedSchedule);
+    }
 </script>
 """
 
-components.html(html_code, height=800, scrolling=True)
+# Компонент для отримання даних від JavaScript
+# Цей компонент буде оновлювати st.session_state.schedule_data
+# коли користувач перетягує елементи
+component_value = components.html(html_code, height=800, scrolling=True, key="schedule_editor")
 
-def generate_pdf(schedule_data, start_date_pdf, end_date_pdf, pairs_pdf, days_pdf, group_names_pdf, num_groups_per_day_pdf):
+# Якщо Streamlit отримав дані від JavaScript, оновлюємо st.session_state
+if component_value is not None:
+    # Перетворюємо ключі назад у кортежі
+    new_schedule_data = {}
+    for key_str, item in component_value.items():
+        day_idx, group_idx, pair_idx = map(int, key_str.split(','))
+        new_schedule_data[(day_idx, group_idx, pair_idx)] = item
+    
+    # Оновлюємо session_state тільки якщо дані дійсно змінилися
+    if new_schedule_data != st.session_state.schedule_data:
+        st.session_state.schedule_data = new_schedule_data
+        save_schedule_to_db(st.session_state.start_date, st.session_state.schedule_data)
+        st.experimental_rerun() # Перезапустити для відображення оновлених даних з session_state
+
+def generate_pdf(schedule_data_pdf, start_date_pdf, end_date_pdf, pairs_pdf, days_pdf, group_names_pdf, num_groups_per_day_pdf):
     pdf = FPDF(orientation='L', unit='mm', format='A4')
     pdf.add_page()
 
@@ -298,9 +458,8 @@ def generate_pdf(schedule_data, start_date_pdf, end_date_pdf, pairs_pdf, days_pd
     bold_font_path = "fonts/DejaVuSans-Bold.ttf"
 
     try:
-        # Перевірка наявності папки fonts та шрифтів
         if not os.path.exists("fonts"):
-            os.makedirs("fonts") # Створити папку, якщо її немає
+            os.makedirs("fonts")
         if not os.path.exists(regular_font_path):
             st.error(f"Шрифт не знайдено: {regular_font_path}. Будь ласка, завантажте 'DejaVuSans.ttf' у папку 'fonts'.")
             return None
@@ -399,7 +558,10 @@ def generate_pdf(schedule_data, start_date_pdf, end_date_pdf, pairs_pdf, days_pd
 
             pdf.set_font("DejaVuSans", "", 7)
             for i_pair in range(len(pairs_pdf)):
-                item = schedule_data[(i_day, i_group, i_pair)]
+                # Отримуємо дані з переданого schedule_data_pdf
+                item = schedule_data_pdf.get((i_day, i_group, i_pair), {
+                    "subject": "Пусто", "teacher": "Немає"
+                })
                 text = f"{item['subject']}\n{item['teacher']}"
 
                 cell_start_x = pdf.get_x()
@@ -413,18 +575,18 @@ def generate_pdf(schedule_data, start_date_pdf, end_date_pdf, pairs_pdf, days_pd
 
     return pdf.output(dest='S').encode('latin1')
 
-# Назва файлу PDF з вибраним тижнем
 pdf_file_name = f"розклад_{st.session_state.start_date.strftime('%d.%m')}–{end_date.strftime('%d.%m')}.pdf"
 
-# Кнопка "Зберегти" (заглушка)
 with col_save_btn:
     if st.button("💾 Зберегти", key="save_button"):
-        st.info("Функція 'Зберегти' буде реалізована пізніше.")
+        # Тепер ця кнопка просто збереже поточний стан st.session_state.schedule_data
+        # до бази даних, на випадок, якщо drag-and-drop не спрацював або для ручного збереження
+        save_schedule_to_db(st.session_state.start_date, st.session_state.schedule_data)
+        st.success("Розклад збережено в базу даних!")
 
-# Кнопка "Завантажити PDF"
 with col_download_btn:
-    # Передаємо session_state.start_date до generate_pdf
-    pdf_bytes = generate_pdf(schedule_data, st.session_state.start_date, end_date, pairs, days, group_names, num_groups_per_day)
+    # Передаємо st.session_state.schedule_data до generate_pdf
+    pdf_bytes = generate_pdf(st.session_state.schedule_data, st.session_state.start_date, end_date, pairs, days, group_names, num_groups_per_day)
 
     if pdf_bytes:
         st.download_button(
