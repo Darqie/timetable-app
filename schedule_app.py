@@ -14,14 +14,16 @@ st.markdown("<h2 style='text-align: center; margin-bottom: 10px;'>Розклад
 st.markdown("---") # Розділювач для візуального відокремлення опцій
 
 # Використовуємо st.columns для розміщення елементів в одному рядку з більш компактними пропорціями
-# Приклад: 0.15 для дати, 0.1 для зберегти, 0.15 для завантажити. Решта - порожня колонка.
-col_date_picker, col_save_btn, col_download_btn, _ = st.columns([0.18, 0.1, 0.14, 0.58]) # Змінені пропорції
+# Розподіл: 18% для вибору дати, 10% для зберегти, 14% для завантажити, 58% порожнього простору
+col_date_picker, col_save_btn, col_download_btn, _ = st.columns([0.18, 0.1, 0.14, 0.58])
 
 with col_date_picker:
-    # Вибір початку тижня - на самому верху як опція, тепер менш широкий
-    # Використання st.container() може допомогти стилізувати його пізніше, але для ширини достатньо колонки
-    st.date_input("Виберіть початок тижня:", date(2025, 6, 2), key="start_date_picker")
+    # Вибір початку тижня - тепер на самому верху як опція
+    # Ця змінна `start_date` буде глобально доступною після виконання цього рядка.
+    start_date = st.date_input("Виберіть початок тижня:", date(2025, 6, 2), key="start_date_picker")
 
+# Оскільки start_date тепер визначено в Streamlit UI, end_date може бути обчислено одразу.
+# Це вирішує потенційний NameError.
 end_date = start_date + timedelta(days=4)
 
 # Відображення тижня по центру, одразу під назвою "Розклад пар"
@@ -242,16 +244,21 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
     bold_font_path = "fonts/DejaVuSans-Bold.ttf"
 
     try:
+        # Перевірка наявності папки fonts та шрифтів
+        if not os.path.exists("fonts"):
+            os.makedirs("fonts") # Створити папку, якщо її немає
         if not os.path.exists(regular_font_path):
-            raise FileNotFoundError(f"Шрифт не знайдено: {regular_font_path}. Переконайтеся, що файли шрифтів (DejaVuSans.ttf) існують у папці 'fonts'.")
+            st.error(f"Шрифт не знайдено: {regular_font_path}. Будь ласка, завантажте 'DejaVuSans.ttf' у папку 'fonts'.")
+            return None
         if not os.path.exists(bold_font_path):
-            raise FileNotFoundError(f"Шрифт не знайдено: {bold_font_path}. Переконайтеся, що файли шрифтів (DejaVuSans-Bold.ttf) існують у папці 'fonts'.")
+            st.error(f"Шрифт не знайдено: {bold_font_path}. Будь ласка, завантажте 'DejaVuSans-Bold.ttf' у папку 'fonts'.")
+            return None
 
         pdf.add_font("DejaVuSans", "", regular_font_path, uni=True)
         pdf.add_font("DejaVuSans", "B", bold_font_path, uni=True)
         pdf.set_font("DejaVuSans", "", size=10)
     except Exception as e:
-        st.error(f"Помилка завантаження шрифту: {e}")
+        st.error(f"Помилка завантаження шрифту: {e}. Переконайтеся, що файли шрифтів існують і доступні.")
         return None
 
     pdf.set_font("DejaVuSans", "B", 14)
@@ -374,4 +381,4 @@ with col_download_btn:
             key="download_button"
         )
     else:
-        st.warning("Не вдалося згенерувати PDF-файл через помилку шрифту.")
+        st.warning("Не вдалося згенерувати PDF-файл.") # Змінено повідомлення для кращої діагностики
