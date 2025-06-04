@@ -31,7 +31,7 @@ end_date = start_date + timedelta(days=4)
 # Відображення тижня по центру, одразу під назвою "Розклад пар"
 st.markdown(f"<h3 style='text-align: center; margin-top: 0px;'>📆 {start_date.strftime('%d.%m.%Y')} – {end_date.strftime('%d.%m.%Y')}</h3>", unsafe_allow_html=True)
 
----
+st.markdown("---")
 
 # ----- Кінець Блоку Опцій -----
 
