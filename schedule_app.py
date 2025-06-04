@@ -110,11 +110,20 @@ body {{ background-color: var(--main-bg-color); }}
     font-size: 16px;
     border-radius: 0;
 }}
+/* Зміни для заголовка дня: видаляємо border і додаємо стилі для повороту тексту */
 .day-header-main {{
     background: var(--header-bg-day);
     font-size: 16px;
     grid-row: span {num_groups_per_day};
     border-radius: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* Поворот тексту */
+    transform: rotate(-90deg);
+    white-space: nowrap; /* Запобігаємо переносу слова */
+    transform-origin: center center; /* Точка обертання */
+    border: none; /* Забираємо рамку */
 }}
 .group-sub-header {{
     background: var(--header-bg-group);
@@ -239,7 +248,7 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
     pair_col_width = (page_width - day_col_width - group_col_width) / len(pairs)
 
     header_height = 15
-    content_cell_height = 15 # Висота рядка для однієї групи
+    content_cell_height = 15
 
     initial_x = pdf.l_margin 
     initial_y = pdf.get_y()
@@ -247,33 +256,25 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
     # Малюємо верхні заголовки (порожня комірка, "Група", "Пари")
     pdf.set_font("DejaVuSans", "B", 10)
     
-    # Верхній лівий кут (порожній)
     pdf.set_xy(initial_x, initial_y)
     pdf.cell(day_col_width, header_height, txt="", border=1, align="C")
 
-    # Заголовок "Група"
     pdf.set_xy(initial_x + day_col_width, initial_y)
     pdf.cell(group_col_width, header_height, txt="Група", border=1, align="C")
 
-    # Заголовки пар
     current_x_for_pairs = initial_x + day_col_width + group_col_width
     for roman, time_range in pairs:
         pdf.set_xy(current_x_for_pairs, initial_y)
         pdf.multi_cell(pair_col_width, header_height / 2, txt=f"{roman} ПАРА\n({time_range})", border=1, align="C")
         current_x_for_pairs += pair_col_width
     
-    # Переходимо на новий рядок після верхніх заголовків
     pdf.set_xy(initial_x, initial_y + header_height)
 
-    # Основний контент таблиці
     pdf.set_font("DejaVuSans", "", 7)
     
     for i_day, day_name in enumerate(days):
-        # Перевіряємо, чи вміститься блок дня на поточній сторінці
-        # Якщо висота, необхідна для дня, перевищує залишок сторінки, додаємо нову сторінку
         if pdf.get_y() + (content_cell_height * num_groups_per_day) > (pdf.h - pdf.b_margin):
             pdf.add_page()
-            # Перемальовуємо верхні заголовки на новій сторінці
             pdf.set_font("DejaVuSans", "B", 10)
             pdf.set_xy(initial_x, pdf.t_margin)
             pdf.cell(day_col_width, header_height, txt="", border=1, align="C")
@@ -286,51 +287,65 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
                 pdf.multi_cell(pair_col_width, header_height / 2, txt=f"{roman} ПАРА\n({time_range})", border=1, align="C")
                 current_x_for_pairs += pair_col_width
             pdf.set_xy(initial_x, pdf.t_margin + header_height)
-            pdf.set_font("DejaVuSans", "", 7) # Повертаємо основний шрифт для контенту
+            pdf.set_font("DejaVuSans", "", 7)
 
-        day_block_start_y = pdf.get_y() # Зберігаємо Y на початку блоку цього дня
+        day_block_start_y = pdf.get_y()
 
-        # Малюємо заголовок дня та комірки груп/пар
         for i_group in range(num_groups_per_day):
-            current_row_start_x = pdf.get_x() # Зазвичай це initial_x
-            current_row_start_y = pdf.get_y() # Зазвичай це day_block_start_y для першої групи, потім збільшується
+            current_row_start_x = pdf.get_x()
+            current_row_start_y = pdf.get_y()
 
-            # Комірка для дня (малюється лише для першої групи дня, а потім "порожні" комірки для наступних груп)
+            # Заголовок дня з поворотом та прибиранням зайвих ліній
             pdf.set_font("DejaVuSans", "B", 9)
-            if i_group == 0: # Якщо це перша група для цього дня, малюємо заголовок дня
-                pdf.cell(day_col_width, content_cell_height * num_groups_per_day, txt=day_name, border=1, align="C")
-            else: # Для наступних груп дня, просто малюємо порожню комірку, щоб зберегти стовпець
-                pdf.cell(day_col_width, content_cell_height, txt="", border=1, align="C")
+            
+            # Встановлюємо позицію для текстового блоку дня
+            day_text_x = initial_x + day_col_width / 2 # Центр колонки дня
+            day_text_y = current_row_start_y + (content_cell_height * num_groups_per_day) / 2 # Центр блоку дня
+
+            if i_group == 0:
+                # Малюємо комірку-контейнер для дня, яка охоплює всі групи, без рамки
+                # Це буде фонова область для повороту тексту
+                pdf.rect(initial_x, day_block_start_y, day_col_width, content_cell_height * num_groups_per_day)
+                
+                # Зберігаємо поточні налаштування для повороту
+                pdf.set_text_color(0, 0, 0) # Чорний текст
+                pdf.set_font("DejaVuSans", "B", 12) # Збільшуємо шрифт для повернутого тексту
+
+                # Переміщуємося в центр блоку, обертаємо і виводимо текст
+                pdf.rotate(90, day_text_x, day_text_y)
+                pdf.set_xy(day_text_x - pdf.get_string_width(day_name) / 2, day_text_y - pdf.font_size / 2)
+                pdf.cell(pdf.get_string_width(day_name), pdf.font_size, txt=day_name, align="C")
+                pdf.rotate(0) # Повертаємо назад
+
+                # Повертаємо шрифт і колір
+                pdf.set_font("DejaVuSans", "", 7)
+                pdf.set_text_color(0, 0, 0)
+                
+            # Малюємо лінії між "Група" та "Пари" для цього дня
+            # Це фактично створює вертикальні лінії, які були б частиною об'єднаної комірки дня
+            # Малюємо ліву рамку для стовпця груп
+            pdf.rect(initial_x, current_row_start_y, day_col_width, content_cell_height) # Малюємо рамку для поточної клітинки "дня"
             
             # Повертаємо курсор на початок стовпця "Група" для поточного рядка
             pdf.set_xy(initial_x + day_col_width, current_row_start_y)
 
-            # Заголовок групи
             pdf.set_font("DejaVuSans", "", 8)
             pdf.cell(group_col_width, content_cell_height, txt=group_names[i_group], border=1, align="C")
             
-            # Переміщуємо курсор на початок стовпців з даними
             pdf.set_xy(initial_x + day_col_width + group_col_width, current_row_start_y)
 
-            # Клітинки з вмістом для кожної пари
-            pdf.set_font("DejaVuSans", "", 7) # Шрифт для вмісту
+            pdf.set_font("DejaVuSans", "", 7)
             for i_pair in range(len(pairs)):
                 item = schedule_data[(i_day, i_group, i_pair)]
                 text = f"{item['subject']}\n{item['teacher']}"
 
-                # Зберігаємо позицію перед multi_cell, щоб потім повернутися
                 cell_start_x = pdf.get_x()
                 cell_start_y = pdf.get_y()
 
                 pdf.multi_cell(pair_col_width, content_cell_height / 2, txt=text, border=1, align="C")
                 
-                # Повертаємо курсор на X-позицію для наступної комірки в тому ж рядку
-                # та на Y-позицію, з якої починалася поточна комірка
                 pdf.set_xy(cell_start_x + pair_col_width, cell_start_y)
             
-            # Після заповнення всіх пар для поточної групи, переходимо на новий рядок для наступної групи.
-            # Курсор вже знаходиться в кінці поточного рядка. Просто переходимо на наступний рядок
-            # на початковій X-позиції для стовпця дня.
             pdf.set_xy(initial_x, current_row_start_y + content_cell_height)
         
     return pdf.output(dest='S').encode('latin1')
