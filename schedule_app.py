@@ -233,7 +233,7 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days):
 
     pdf.ln(10) # Перейти на новий рядок після заголовків пар
 
-    # Основний контент таблиці
+# Основний контент таблиці
     pdf.set_font("DejaVuSans", "", 8) # Зменшений шрифт для вмісту
     for i_day, day_name in enumerate(days):
         start_x = pdf.get_x()
@@ -241,7 +241,8 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days):
         
         # Заголовок дня
         pdf.set_font("DejaVuSans", "B", 10)
-        pdf.cell(day_col_width, 20, txt=day_name, border=1, align="C", center=True) # Висота 20, щоб відповідати вмісту клітинок
+        # ВИПРАВЛЕННЯ: Видаляємо 'center=True'
+        pdf.cell(day_col_width, 20, txt=day_name, border=1, align="C") # Висота 20, щоб відповідати вмісту клітинок
         pdf.set_font("DejaVuSans", "", 8) # Повернути звичайний шрифт для даних
         
         # Перемістити курсор на початок стовпців з даними
