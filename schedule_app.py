@@ -291,18 +291,20 @@ st.markdown("<div class='table-container'>", unsafe_allow_html=True)
 # --- Верхній ряд заголовків: Порожній кут, Заголовок "Група", Заголовки Пар ---
 # Розраховуємо ширини колонок для верхнього ряду
 # 120px для порожньої комірки, 80px для "Групи", і решта порівну для пар
-# Загальна ширина Streamlit-контейнера відома як 10000 (умовно, для `layout="wide"`)
-# Дозволимо Streamlit визначити пропорції для 5 пар, використовуючи ваги 1, 1, 1, 1, 1
-# і фіксовані розміри для перших двох
-col_weights_header = [120, 80] + [1 for _ in PAIRS]
+# Ваги колонок: [фіксована ширина, фіксована ширина] + [відносна вага для кожної пари]
+# Загальна ширина вікна Streamlit є гнучкою, тому ми використовуємо комбінацію фіксованих пікселів і відносних ваг.
+# Streamlit буде намагатися пропорційно розподілити решту простору.
+col_weights_header = [120, 80] + [1 for _ in PAIRS] # 120px, 80px, а потім 5 рівних частин
 header_cols = st.columns(col_weights_header)
 
 with header_cols[0]:
+    # Верхній лівий кут таблиці
     st.markdown("<div class='cell-style header-cell-top' style='border-top-left-radius: 12px;'></div>", unsafe_allow_html=True)
 with header_cols[1]:
+    # Заголовок "Група"
     st.markdown("<div class='cell-style header-cell-top group-header-cell'>Група</div>", unsafe_allow_html=True)
 for i, (roman, time_range) in enumerate(PAIRS):
-    with header_cols[i + 2]:
+    with header_cols[i + 2]: # +2 тому що перші дві колонки вже зайняті
         right_border_class = "no-right-border" if i == len(PAIRS) - 1 else ""
         border_radius_style = "border-top-right-radius: 12px;" if i == len(PAIRS) - 1 else ""
         st.markdown(f'''
@@ -313,17 +315,25 @@ for i, (roman, time_range) in enumerate(PAIRS):
         ''', unsafe_allow_html=True)
 
 # --- Основний вміст таблиці: Дні, Групи, Поля вводу ---
-# Для кожного дня створюємо один великий "ряд" з Streamlit-колонок
+# Для кожного дня створюємо один "головний ряд" Streamlit
+# Цей ряд буде складатися з двох колонок:
+# 1. Заголовок дня (розтягується вертикально)
+# 2. Контейнер для всіх груп та їхніх полів вводу для цього дня
 for i_day, day_name in enumerate(DAYS):
     is_last_day = (i_day == len(DAYS) - 1)
-    bottom_border_class = "no-bottom-border" if is_last_day else ""
 
-    # Головні колонки для дня: перша для заголовка дня, друга для всіх груп і їхніх пар
-    # Другій колонці дамо більшу вагу, щоб вона розтягнулася
-    day_main_cols = st.columns([120, sum([80] + [1 for _ in PAIRS])]) # 120 для дня, решта - сума ваг груп та пар
+    # Розраховуємо загальну висоту для заголовка дня, щоб він розтягувався на всі групи
+    # Кожна клітинка має min-height 60px
+    day_header_height = NUM_GROUPS_PER_DAY * 60
+
+    # Створюємо головні колонки для дня
+    # 120 - це ширина для заголовка дня.
+    # Їхня сума повинна відповідати загальній кількості колонок, які будуть вкладені.
+    # [120, 80 + 5* (відносна ширина)] = [120, 80 + 5]
+    day_main_cols = st.columns([120, 80 + len(PAIRS)]) # 120px для дня, решта - сума ваг груп та пар
 
     with day_main_cols[0]: # Колонка для заголовка дня
-        day_header_height = NUM_GROUPS_PER_DAY * 60 # Розраховуємо висоту на основі min-height клітинок
+        bottom_border_class = "no-bottom-border" if is_last_day else ""
         border_radius_style = "border-bottom-left-radius: 12px;" if is_last_day else ""
         st.markdown(f"""
             <div class="cell-style day-header-cell {bottom_border_class}" style="min-height: {day_header_height}px; {border_radius_style}">
@@ -332,25 +342,29 @@ for i_day, day_name in enumerate(DAYS):
         """, unsafe_allow_html=True)
 
     with day_main_cols[1]: # Колонка для всіх груп і їхніх пар
-        # Всередині цієї колонки створюємо рядки для кожної групи
+        # Всередині цієї колонки ми створюємо рядки для кожної групи
         for i_group in range(NUM_GROUPS_PER_DAY):
-            is_last_group_in_day = (i_group == NUM_GROUPS_PER_DAY - 1) and is_last_day
-            group_bottom_border_class = "no-bottom-border" if is_last_group_in_day else ""
+            # Перевіряємо, чи це остання група в останньому дні, щоб прибрати нижню рамку
+            is_last_row_overall = is_last_day and (i_group == NUM_GROUPS_PER_DAY - 1)
+            bottom_border_class_for_data = "no-bottom-border" if is_last_row_overall else ""
 
             # Створюємо колонки для заголовка групи та 5 пар для цього конкретного ряду
+            # [80] для групи, і [1 for _ in PAIRS] для 5 пар
             group_and_pairs_cols = st.columns([80] + [1 for _ in PAIRS])
 
             with group_and_pairs_cols[0]: # Колонка для заголовка групи
-                st.markdown(f"<div class='cell-style group-header-cell {group_bottom_border_class}'>{GROUP_NAMES[i_group]}</div>", unsafe_allow_html=True)
+                # Тут вже є рамка справа і знизу
+                st.markdown(f"<div class='cell-style group-header-cell {bottom_border_class_for_data}'>{GROUP_NAMES[i_group]}</div>", unsafe_allow_html=True)
             
             for i_pair in range(len(PAIRS)):
                 with group_and_pairs_cols[i_pair + 1]: # Колонка для полів вводу пари
                     right_border_class = "no-right-border" if i_pair == len(PAIRS) - 1 else ""
+                    
                     current_item = st.session_state.schedule_display_data.get((i_day, i_group, i_pair), {
                         "teacher": "", "subject": "", "id": str(uuid.uuid4())
                     })
                     
-                    st.markdown(f"<div class='cell-style {right_border_class} {group_bottom_border_class}'>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='cell-style {right_border_class} {bottom_border_class_for_data}'>", unsafe_allow_html=True)
                     st.session_state.schedule_display_data[(i_day, i_group, i_pair)]['subject'] = st.text_input(
                         label="Предмет", 
                         value=current_item["subject"],
@@ -364,7 +378,6 @@ for i_day, day_name in enumerate(DAYS):
                         placeholder="Викладач"
                     )
                     st.markdown("</div>", unsafe_allow_html=True)
-
 
 st.markdown("</div>", unsafe_allow_html=True) # Закриття table-container
 
