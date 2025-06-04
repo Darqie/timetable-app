@@ -71,7 +71,7 @@ body {{
 .timetable {{
     display: grid;
     /* Перший стовпець для днів, потім для кожної пари (яка охоплює 6 груп) */
-    grid-template-columns: 180px repeat({len(pairs) * num_groups_per_pair}, 1fr); 
+    grid-template-columns: 180px repeat({len(pairs) * num_groups_per_pair}, 1fr);
     grid-auto-rows: minmax(80px, auto); /* Адаптивна висота рядків */
     gap: 1px; /* Менші проміжки для більш щільної таблиці */
     font-family: 'Roboto', sans-serif;
@@ -142,26 +142,26 @@ body {{
     width: 95%; /* Займає більшість клітинки */
     font-size: 10px; /* Ще менший шрифт для draggable */
     transition: transform 0.1s ease-in-out; /* Анімація при перетягуванні */
-}
+}}
 .draggable:active {{
     transform: scale(1.03); /* Збільшення при активації */
 }}
 .time-block {{
     font-size: 13px;
     color: var(--text-color);
-    line-height: 1.2; 
+    line-height: 1.2;
 }}
 </style>
 
 <div class="timetable">
-    <div class="cell cell-header top-left-corner"></div> 
+    <div class="cell cell-header top-left-corner"></div>
 """
 
 # Перший рядок: Заголовки пар (об'єднані комірки)
 for roman, time_range in pairs:
     html_code += f'''
         <div class="cell cell-header pair-header">
-            <div><strong>{roman} ПАРА</strong></div> 
+            <div><strong>{roman} ПАРА</strong></div>
             <div class="time-block">({time_range})</div>
         </div>
     '''
@@ -176,7 +176,7 @@ for i_pair in range(len(pairs)):
 for i_day, day_name in enumerate(days):
     # Заголовок дня (перша комірка в кожному рядку)
     html_code += f'<div class="cell cell-header day-name-header">{day_name}</div>'
-    
+
     # Клітинки з вмістом для кожної пари та групи цього дня
     for i_pair in range(len(pairs)):
         for i_group in range(num_groups_per_pair):
@@ -207,9 +207,10 @@ function drop(ev) {{
   var draggedElem = document.getElementById(draggedId);
 
   var dropTarget = ev.target;
+  // Перевірка на заголовки. Подвоєні дужки {{ }} для JavaScript
   while (!dropTarget.classList.contains("cell") || dropTarget.classList.contains("cell-header")) {{
     dropTarget = dropTarget.parentNode;
-    if (!dropTarget) return; 
+    if (!dropTarget) return;
   }}
 
   var existing = dropTarget.querySelector(".draggable");
@@ -226,7 +227,7 @@ function drop(ev) {{
 """
 
 # Висота може бути досить значною через кількість клітинок
-components.html(html_code, height=800, scrolling=True) 
+components.html(html_code, height=800, scrolling=True)
 
 # ⬇️ ОДНА КНОПКА ЗАВАНТАЖЕННЯ PDF ⬇️
 # Функція для генерації PDF-файлу
@@ -252,16 +253,16 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
 
     # Загальна ширина сторінки для контенту
     page_width = pdf.w - 2 * pdf.l_margin
-    
+
     # Визначення ширини колонок
     day_col_width = 35 # Ширина для колонки днів
     # Ширина однієї під-колонки для групи
-    group_sub_col_width = (page_width - day_col_width) / (len(pairs) * num_groups_per_pair) 
+    group_sub_col_width = (page_width - day_col_width) / (len(pairs) * num_groups_per_pair)
 
     # Перший рядок заголовків (пуста комірка + пари, об'єднані)
     pdf.set_font("DejaVuSans", "B", 10)
     pdf.cell(day_col_width, 10, txt="", border=1, align="C") # Верхній лівий кут
-    
+
     # Зберігаємо позицію X для заголовків пар
     start_x_headers = pdf.get_x()
     start_y_headers = pdf.get_y()
@@ -287,15 +288,13 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
     for i_day, day_name in enumerate(days):
         start_x_row = pdf.get_x()
         start_y_row = pdf.get_y()
-        
+
         # Заголовок дня
         pdf.set_font("DejaVuSans", "B", 9) # Трохи більший шрифт для дня
         # Змінюємо висоту клітинки дня, щоб відповідати висоті всього рядка даних
-        # Це вимагає попереднього розрахунку або використання фіксованої висоти
-        # Для простоти, припустимо висоту 40 для рядка
-        pdf.cell(day_col_width, 40, txt=day_name, border=1, align="C") 
+        pdf.cell(day_col_width, 40, txt=day_name, border=1, align="C")
         pdf.set_font("DejaVuSans", "", 7) # Повернути звичайний шрифт для даних
-        
+
         # Перемістити курсор на початок стовпців з даними
         pdf.set_xy(start_x_row + day_col_width, start_y_row)
 
@@ -303,22 +302,22 @@ def generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, 
             for i_group in range(num_groups_per_pair):
                 item = schedule_data[(i_day, i_pair, i_group)]
                 text = f"{item['subject']}\n{item['teacher']}\n{item['group']}"
-                
+
                 current_x = pdf.get_x()
                 current_y = pdf.get_y()
 
-                pdf.multi_cell(group_sub_col_width, 40 / 3, txt=text, border=1, align="C") # 40 / 3 для 3-х рядків тексту
+                pdf.multi_cell(group_sub_col_width, 40 / 3, txt=text, border=1, align="C")
                 # Повертаємося на поточну Y-позицію, щоб продовжити наступну клітинку в тому ж рядку
                 pdf.set_xy(current_x + group_sub_col_width, current_y)
-            
+
         pdf.ln(40) # Переходимо на новий рядок після заповнення всіх груп для поточної пари
-        
+
     return pdf.output(dest='S').encode('latin1')
 
 # Кнопка для завантаження PDF
 pdf_bytes = generate_pdf(schedule_data, start_date, end_date, pairs, days, group_names, num_groups_per_pair)
 
-if pdf_bytes: 
+if pdf_bytes:
     st.download_button(
         label="⬇️ Завантажити PDF",
         data=pdf_bytes,
